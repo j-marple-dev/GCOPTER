@@ -66,7 +66,7 @@ public:
         routeMarker.id = 0;
         routeMarker.type = visualization_msgs::Marker::LINE_LIST;
         routeMarker.header.stamp = ros::Time::now();
-        routeMarker.header.frame_id = "odom";
+        routeMarker.header.frame_id = "map";
         routeMarker.pose.orientation.w = 1.00;
         routeMarker.action = visualization_msgs::Marker::ADD;
         routeMarker.ns = "route";
@@ -88,7 +88,7 @@ public:
         wayPointsMarker.scale.z = 0.35;
 
         trajMarker = routeMarker;
-        trajMarker.header.frame_id = "odom";
+        trajMarker.header.frame_id = "map";
         trajMarker.id = 0;
         trajMarker.ns = "trajectory";
         trajMarker.color.r = 0.00;
@@ -195,7 +195,7 @@ public:
 
         meshMarker.id = 0;
         meshMarker.header.stamp = ros::Time::now();
-        meshMarker.header.frame_id = "odom";
+        meshMarker.header.frame_id = "map";
         meshMarker.pose.orientation.w = 1.00;
         meshMarker.action = visualization_msgs::Marker::ADD;
         meshMarker.type = visualization_msgs::Marker::TRIANGLE_LIST;
@@ -259,7 +259,7 @@ public:
         sphereMarkers.id = 0;
         sphereMarkers.type = visualization_msgs::Marker::SPHERE_LIST;
         sphereMarkers.header.stamp = ros::Time::now();
-        sphereMarkers.header.frame_id = "odom";
+        sphereMarkers.header.frame_id = "map";
         sphereMarkers.pose.orientation.w = 1.00;
         sphereMarkers.action = visualization_msgs::Marker::ADD;
         sphereMarkers.ns = "spheres";
@@ -293,7 +293,7 @@ public:
         sphereMarkers.id = sg;
         sphereMarkers.type = visualization_msgs::Marker::SPHERE_LIST;
         sphereMarkers.header.stamp = ros::Time::now();
-        sphereMarkers.header.frame_id = "odom";
+        sphereMarkers.header.frame_id = "map";
         sphereMarkers.pose.orientation.w = 1.00;
         sphereMarkers.action = visualization_msgs::Marker::ADD;
         sphereMarkers.ns = "StartGoal";

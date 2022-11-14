@@ -81,6 +81,8 @@ private:
     ros::Subscriber mapSub;
     ros::Subscriber targetSub;
 
+    ros::Timer mainTimer;
+
     bool mapInitialized;
     voxel_map::VoxelMap voxelMap;
     Visualizer visualizer;
@@ -110,6 +112,8 @@ public:
 
         targetSub = nh.subscribe(config.targetTopic, 1, &GlobalPlanner::targetCallBack, this,
                                  ros::TransportHints().tcpNoDelay());
+
+        mainTimer = nh_.createTimer(ros::Duration(0.01), &GlobalPlanner::mainLoop , this);
     }
 
     inline void mapCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg)
@@ -149,7 +153,7 @@ public:
                                                    startGoal[1],
                                                    voxelMap.getOrigin(),
                                                    voxelMap.getCorner(),
-                                                   &voxelMap, 0.01,
+                                                   &voxelMap, 0.03,
                                                    route);
             std::vector<Eigen::MatrixX4d> hPolys;
             std::vector<Eigen::Vector3d> pc;
@@ -256,6 +260,11 @@ public:
         return;
     }
 
+    inline void mainLoop(const ros::TimerEvent & /*event*/)
+    {
+        process();
+    }
+
     inline void process()
     {
         Eigen::VectorXd physicalParams(6);
@@ -311,13 +320,7 @@ int main(int argc, char **argv)
 
     GlobalPlanner global_planner(Config(ros::NodeHandle("~")), nh_);
 
-    ros::Rate lr(1000);
-    while (ros::ok())
-    {
-        global_planner.process();
-        ros::spinOnce();
-        lr.sleep();
-    }
+    ros::spin();
 
     return 0;
 }
