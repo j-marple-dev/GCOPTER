@@ -112,7 +112,7 @@ namespace voxel_map
             }
         }
 
-        inline void dilate(const int &r)
+        inline void dilate(const int &r, Eigen::Vector3i lb, Eigen::Vector3i hb)
         {
             if (r <= 0)
             {
@@ -120,16 +120,22 @@ namespace voxel_map
             }
             else
             {
+                boundIndex(lb);
+                boundIndex(hb);
+
+                Eigen::Vector3i lb_s = lb.array() * step.array();
+                Eigen::Vector3i hb_s = hb.array() * step.array();
+
                 std::vector<Eigen::Vector3i> lvec, cvec;
                 lvec.reserve(voxNum);
                 cvec.reserve(voxNum);
                 int i, j, k, idx;
                 bool check;
-                for (int x = 0; x <= bounds(0); x++)
+                for (int x = lb_s(0); x <= hb_s(0); x++)
                 {
-                    for (int y = 0; y <= bounds(1); y += step(1))
+                    for (int y = lb_s(1); y <= hb_s(1); y += step(1))
                     {
-                        for (int z = 0; z <= bounds(2); z += step(2))
+                        for (int z = lb_s(2); z <= hb_s(2); z += step(2))
                         {
                             if (voxels[x + y + z] == Occupied)
                             {
@@ -159,6 +165,16 @@ namespace voxel_map
 
                 surf = cvec;
             }
+        }
+
+        inline void dilate(const int &r)
+        {
+            dilate(r, Eigen::Vector3i::Zero(), Eigen::Vector3i(mapSize.array() - 1));
+        }
+
+        inline void dilate(const int &r, Eigen::Vector3d lb, Eigen::Vector3d hb)
+        {
+            dilate(r, posD2I(lb), posD2I(hb));
         }
 
         inline void getSurfInBox(const Eigen::Vector3i &center,
@@ -198,7 +214,7 @@ namespace voxel_map
             }
             else
             {
-                return true;
+                return false;
             }
         }
 
@@ -211,7 +227,7 @@ namespace voxel_map
             }
             else
             {
-                return true;
+                return false;
             }
         }
 
@@ -223,6 +239,160 @@ namespace voxel_map
         inline Eigen::Vector3i posD2I(const Eigen::Vector3d &pos) const
         {
             return ((pos - o) / scale).cast<int>();
+        }
+
+        template<typename Functor>
+        inline void iterateVoxelPosVal(Functor f) const
+        {
+            for (int x = 0; x < mapSize(0); x++)
+            {
+                for (int y = 0; y < mapSize(1); y++)
+                {
+                    for (int z = 0; z < mapSize(2); z++)
+                    {
+                        Eigen::Vector3i id(x, y, z);
+                        f(posI2D(id), voxels[id.dot(step)]);
+                    }
+                }
+            }
+        }
+
+        inline void boundIndex(Eigen::Vector3i &id)
+        {
+            id(0) = id(0) > 0 ? id(0) : 0; id(0) = id(0) < mapSize(0) - 1 ? id(0) : mapSize(0) - 1;
+            id(1) = id(1) > 0 ? id(1) : 0; id(1) = id(1) < mapSize(1) - 1 ? id(1) : mapSize(1) - 1;
+            id(2) = id(2) > 0 ? id(2) : 0; id(2) = id(2) < mapSize(2) - 1 ? id(2) : mapSize(2) - 1;
+        }
+
+        inline void resetVoxel(Eigen::Vector3i lb, Eigen::Vector3i hb)
+        {
+            boundIndex(lb);
+            boundIndex(hb);
+
+            for (int x = lb(0); x <= hb(0); x++)
+            {
+                for (int y = lb(0); y <= hb(1); y ++)
+                {
+                    for (int z = lb(0); z <= hb(2); z ++)
+                    {
+                        Eigen::Vector3i id(x, y, z);
+                        voxels[id.dot(step)] = Unoccupied;
+                    }
+                }
+            }
+            surf.clear();
+        }
+
+        inline void resetVoxel()
+        {
+            std::fill(voxels.begin(), voxels.end(), 0);
+        }
+
+        inline void resetVoxel(Eigen::Vector3d lb, Eigen::Vector3d hb)
+        {
+            resetVoxel(posD2I(lb), posD2I(hb));
+        }
+
+        inline void changeOrigin(Eigen::Vector3i move_offset)
+        {
+            int offset = move_offset.dot(step);
+
+            if (offset > 0)
+            {
+                int max_addr = mapSize(0) * mapSize(1) * mapSize(2);
+                for (int addr = 0; addr < max_addr - offset; addr++)
+                {
+                    voxels[addr] = voxels[addr + offset];
+                }
+
+                if (move_offset.z() != 0)
+                {
+                    for (int addr = max_addr - offset; addr < max_addr; addr++)
+                    {
+                        voxels[addr] = 0;
+                    }
+                }
+                else if (move_offset.y() != 0)
+                {
+                    for (int i = 0; i < mapSize(2); i++)
+                    {
+                        int part_max_addr = (i + 1) * mapSize(1) * mapSize(0);
+                        for (int addr = part_max_addr - offset; addr < part_max_addr; addr++)
+                        {
+                            voxels[addr] = 0;
+                        }
+                    }
+                }
+                else if (move_offset.x() != 0)
+                {
+                    for (int i = 0; i < mapSize(2); i++)
+                    {
+                        for (int j = 0; j < mapSize(1); j++)
+                        {
+                            int part_max_addr = i * mapSize(1) * mapSize(0) + (j + 1) * mapSize(0);
+                            for (int addr = part_max_addr - offset; addr < part_max_addr; addr++)
+                            {
+                                voxels[addr] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (offset < 0)
+            {
+                int max_addr = mapSize(0) * mapSize(1) * mapSize(2);
+                for (int addr = max_addr - 1; addr >= -offset; addr--)
+                {
+                    voxels[addr] = voxels[addr + offset];
+                }
+
+                if (move_offset.z() != 0)
+                {
+                    for (int addr = 0; addr < -offset; addr++)
+                    {
+                        voxels[addr] = 0;
+                    }
+                }
+                else if (move_offset.y() != 0)
+                {
+                    for (int i = 0; i < mapSize(2); i++)
+                    {
+                        int part_max_addr = i * mapSize(1) * mapSize(0);
+                        for (int addr = part_max_addr; addr < part_max_addr - offset; addr++)
+                        {
+                            voxels[addr] = 0;
+                        }
+                    }
+                }
+                else if (move_offset.x() != 0)
+                {
+                    for (int i = 0; i < mapSize(2); i++)
+                    {
+                        for (int j = 0; j < mapSize(1); j++)
+                        {
+                            int part_max_addr = i * mapSize(1) * mapSize(0) + j * mapSize(0);
+                            for (int addr = part_max_addr; addr < part_max_addr - offset; addr++)
+                            {
+                                voxels[addr] = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            else
+                return;
+
+            o += move_offset.cast<double>() * scale;
+            oc = o + Eigen::Vector3d::Constant(0.5 * scale);
+        }
+
+        inline void changeOrigin(Eigen::Vector3d move_offset)
+        {
+            Eigen::Vector3i move_offset_i;
+            move_offset_i.x() = move_offset.x() / scale;
+            move_offset_i.y() = move_offset.y() / scale;
+            move_offset_i.z() = move_offset.z() / scale;
+            changeOrigin(move_offset_i);
         }
     };
 }
