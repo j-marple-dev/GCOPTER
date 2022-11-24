@@ -27,6 +27,7 @@
 #include <mavros_msgs/PositionTarget.h>
 
 #include "misc/vehicle_state.hpp"
+#include "path_searching/dyn_a_star.h"
 
 struct Config
 {
@@ -107,6 +108,8 @@ private:
 
     Eigen::Vector3d cmdPosition;
     double cmdYaw;
+    
+    AStar::Ptr a_star_;
 
 public:
     GlobalPlanner(const Config &conf,
@@ -138,6 +141,9 @@ public:
 
         map_pub = nh.advertise<sensor_msgs::PointCloud2>("/voxel_map/occupancy", 10);
         offboard_cmd_pub = nh.advertise<mavros_msgs::PositionTarget>("/mavros/setpoint_raw/local", 1);
+        
+        a_star_.reset(new AStar);
+        a_star_->initGridMap(voxel_map::VoxelMap::Ptr(&voxelMap), Eigen::Vector3i(256, 256, 256));
     }
 
     inline void mapCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg)
@@ -185,7 +191,7 @@ public:
         mapInitialized = true;
     }
 
-    inline std::vector<Eigen::Vector3d> shrinkPath(const std::vector<Eigen::Vector3d> &path_in)
+    inline std::vector<Eigen::Vector3d> shrinkPath(const std::vector<Eigen::Vector3d> &path_in, const bool enable_diag = false)
     {
         if (path_in.size() <= 2) return path_in;
 
@@ -205,7 +211,49 @@ public:
         }
         path_out.push_back(path_in.back());
 
-        return path_out;
+        if (path_out.size() > 2 && enable_diag)
+        {
+            std::vector<Eigen::Vector3d> path_diag;
+            path_diag.push_back(path_out.front());
+
+            auto ray_cast = [&](const Eigen::Vector3d &start, const Eigen::Vector3d &end, const double dt) {
+                const double eps = 1.0e-6;
+                Eigen::Vector3d sub = (end - start);
+                const double length = sub.norm();
+                const Eigen::Vector3d dir = sub.normalized();
+                Eigen::Vector3i pos_p = voxelMap.posD2I(start);
+
+                for (double t = dt; t < length + eps; t += dt)
+                {
+                    Eigen::Vector3i pos_n = voxelMap.posD2I(start + dir * t);
+                    if (pos_p != pos_n)
+                    {
+                        if (voxelMap.query(pos_n) != 0)
+                        {
+                            return voxelMap.posI2D(pos_n);
+                        }
+                        pos_p = pos_n;
+                    }
+                }
+
+                return end;
+            };
+
+            for (size_t i = 2; i < path_out.size(); i++)
+            {
+                if (path_out[i] != ray_cast(path_diag.back(), path_out[i], 0.05))
+                {
+                    path_diag.push_back(path_out[i-1]);
+                }
+            }
+            path_diag.push_back(path_out.back());
+
+            return path_diag;
+        }
+        else
+        {
+            return path_out;
+        }
     }
 
     inline void plan()
@@ -216,6 +264,12 @@ public:
             t[0] = ros::Time::now();
 
             std::vector<Eigen::Vector3d> route;
+            if (a_star_->AstarSearch(voxelMap.getScale(), startGoal[0], startGoal[1])) {
+                std::vector<Eigen::Vector3d> a_star_path = a_star_->getPath();
+                route = shrinkPath(a_star_path, true);
+            }
+            else
+            {
             sfc_gen::planPath<voxel_map::VoxelMap>(startGoal[0],
                                                    startGoal[1],
                                                    voxelMap.getOrigin(),
@@ -223,6 +277,7 @@ public:
                                                    &voxelMap, 0.03,
                                                    route);
             route = shrinkPath(route);
+            }
 
             std::vector<Eigen::MatrixX4d> hPolys;
             std::vector<Eigen::Vector3d> pc;
@@ -343,6 +398,11 @@ public:
                 if (sub_vector.norm() > max_dist)
                 {
                     goal = startGoal.front() + sub_vector.normalized() * max_dist;
+                }
+                else if (sub_vector.norm() < voxelMap.getScale())
+                {
+                    ROS_WARN("Goal position is too close to Start !!!\n");
+                    return;
                 }
                 startGoal.emplace_back(goal);
 
@@ -515,6 +575,8 @@ public:
         if (voxelMap.query(startGoal.back()) != 0)
         {
             ROS_WARN("Goal position is infeasible!");
+            startGoal.clear();
+            traj.clear();
             return;
         }
         if (!state.initialized) return;
@@ -573,6 +635,15 @@ public:
             {
                 startGoal.back() = commandGoal;
             }
+
+            if (voxelMap.query(startGoal.back()) != 0)
+            {
+                ROS_WARN("Goal position is infeasible!");
+                startGoal.clear();
+                traj.clear();
+                return;
+            }
+
             visualizer.visualizeStartGoal(commandGoal, 0.5, 1);
             plan();
         }

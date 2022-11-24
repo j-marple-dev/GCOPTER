@@ -55,6 +55,8 @@ namespace voxel_map
               stepScale(step.cast<double>().cwiseInverse() * scale),
               voxels(voxNum, Unoccupied) {}
 
+        typedef std::shared_ptr<VoxelMap> Ptr;
+
     private:
         Eigen::Vector3i mapSize;
         Eigen::Vector3d o;
@@ -207,8 +209,13 @@ namespace voxel_map
         inline bool query(const Eigen::Vector3d &pos) const
         {
             const Eigen::Vector3i id = ((pos - o) / scale).cast<int>();
-            if (id(0) >= 0 && id(1) >= 0 && id(2) >= 0 &&
-                id(0) < mapSize(0) && id(1) < mapSize(1) && id(2) < mapSize(2))
+            if (id(2) < 0 || id(2) >= mapSize(2))
+            {
+                return true;
+            }
+            // if (id(0) >= 0 && id(1) >= 0 && id(2) >= 0 &&
+            //     id(0) < mapSize(0) && id(1) < mapSize(1) && id(2) < mapSize(2))
+            else if (id(0) >= 0 && id(1) >= 0 && id(0) < mapSize(0) && id(1) < mapSize(1))
             {
                 return voxels[id.dot(step)];
             }
@@ -220,8 +227,13 @@ namespace voxel_map
 
         inline bool query(const Eigen::Vector3i &id) const
         {
-            if (id(0) >= 0 && id(1) >= 0 && id(2) >= 0 &&
-                id(0) < mapSize(0) && id(1) < mapSize(1) && id(2) < mapSize(2))
+            if (id(2) < 0 || id(2) >= mapSize(2))
+            {
+                return true;
+            }
+            // if (id(0) >= 0 && id(1) >= 0 && id(2) >= 0 &&
+            //     id(0) < mapSize(0) && id(1) < mapSize(1) && id(2) < mapSize(2))
+            else if (id(0) >= 0 && id(1) >= 0 && id(0) < mapSize(0) && id(1) < mapSize(1))
             {
                 return voxels[id.dot(step)];
             }

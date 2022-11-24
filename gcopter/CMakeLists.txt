@@ -35,7 +35,10 @@ target_link_libraries(global_planning
   ${catkin_LIBRARIES}
 )
 
-add_executable(gcopter_realtime src/gcopter_realtime.cpp)
+add_executable(gcopter_realtime
+  src/gcopter_realtime.cpp
+  src/dyn_a_star.cpp
+)
 
 target_link_libraries(gcopter_realtime
   ${OMPL_LIBRARIES}
