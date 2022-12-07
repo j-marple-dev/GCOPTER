@@ -190,12 +190,19 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
   Eigen::Vector3i offset_id;
   posToIndex(mp_.map_origin_ + move_offset, offset_id);
   int offset = toAddress(offset_id);
+  int max_addr = mp_.map_voxel_num_(0) * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2);
+  double occ_buffer_init_val = mp_.clamp_min_log_ - mp_.unknown_flag_;
 
   // std::cout << "origin- " << mp_.map_origin_(0) << ", " << mp_.map_origin_(1) << ", " << mp_.map_origin_(2) << std::endl;
   // std::cout << "offset- " << move_offset(0) << ", " << move_offset(1) << ", " << move_offset(2) << " : " << offset << std::endl;
 
-  if (offset > 0) {
-    int max_addr = mp_.map_voxel_num_(0) * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2);
+  if (abs(offset) >= max_addr) {
+    for (int addr = 0; addr < max_addr; addr++) {
+      md_.occupancy_buffer_inflate_[addr] = 0;
+      md_.occupancy_buffer_[addr] = occ_buffer_init_val;
+    }
+
+  } if (offset > 0) {
     for (int addr = 0; addr < max_addr - offset; addr++) {
       md_.occupancy_buffer_inflate_[addr] = md_.occupancy_buffer_inflate_[addr + offset];
       md_.occupancy_buffer_[addr] = md_.occupancy_buffer_[addr + offset];
@@ -204,7 +211,7 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
     if (move_offset.x() != 0) {
       for (int addr = max_addr - offset; addr < max_addr; addr++) {
         md_.occupancy_buffer_inflate_[addr] = 0;
-        md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+        md_.occupancy_buffer_[addr] = occ_buffer_init_val;
       }
 
     } else if (move_offset.y() != 0) {
@@ -212,7 +219,7 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
         int part_max_addr = (i + 1) * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2);
         for (int addr = part_max_addr - offset; addr < part_max_addr; addr++) {
           md_.occupancy_buffer_inflate_[addr] = 0;
-          md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+          md_.occupancy_buffer_[addr] = occ_buffer_init_val;
         }
       }
 
@@ -222,14 +229,13 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
           int part_max_addr = i * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2) + (j + 1) * mp_.map_voxel_num_(2);
           for (int addr = part_max_addr - offset; addr < part_max_addr; addr++) {
             md_.occupancy_buffer_inflate_[addr] = 0;
-            md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+            md_.occupancy_buffer_[addr] = occ_buffer_init_val;
           }
         }
       }
     }
 
   } else if (offset < 0) {
-    int max_addr = mp_.map_voxel_num_(0) * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2);
     for (int addr = max_addr - 1; addr >= -offset; addr--) {
       md_.occupancy_buffer_inflate_[addr] = md_.occupancy_buffer_inflate_[addr + offset];
       md_.occupancy_buffer_[addr] = md_.occupancy_buffer_[addr + offset];
@@ -238,7 +244,7 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
     if (move_offset.x() != 0) {
       for (int addr = 0; addr < -offset; addr++) {
         md_.occupancy_buffer_inflate_[addr] = 0;
-        md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+        md_.occupancy_buffer_[addr] = occ_buffer_init_val;
       }
 
     } else if (move_offset.y() != 0) {
@@ -246,7 +252,7 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
         int part_max_addr = i * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2);
         for (int addr = part_max_addr; addr < part_max_addr - offset; addr++) {
           md_.occupancy_buffer_inflate_[addr] = 0;
-          md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+          md_.occupancy_buffer_[addr] = occ_buffer_init_val;
         }
       }
     } else if (move_offset.z() != 0) {
@@ -255,7 +261,7 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
           int part_max_addr = i * mp_.map_voxel_num_(1) * mp_.map_voxel_num_(2) + j * mp_.map_voxel_num_(2);
           for (int addr = part_max_addr; addr < part_max_addr - offset; addr++) {
             md_.occupancy_buffer_inflate_[addr] = 0;
-            md_.occupancy_buffer_[addr] = mp_.clamp_min_log_ - mp_.unknown_flag_;
+            md_.occupancy_buffer_[addr] = occ_buffer_init_val;
           }
         }
       }
