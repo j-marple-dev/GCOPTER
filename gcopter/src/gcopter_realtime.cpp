@@ -11,6 +11,7 @@
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <std_msgs/String.h>
 
 #include <cmath>
 #include <iostream>
@@ -53,7 +54,7 @@ struct Config
     double smoothingEps;
     int integralIntervs;
     double relCostTol;
-    double timeFoward;
+    double timeFoward = 0;
 
     Config(const ros::NodeHandle &nh_priv)
     {
@@ -79,7 +80,6 @@ struct Config
         nh_priv.getParam("SmoothingEps", smoothingEps);
         nh_priv.getParam("IntegralIntervs", integralIntervs);
         nh_priv.getParam("RelCostTol", relCostTol);
-        nh_priv.getParam("TimeFoward", timeFoward);
     }
 };
 
@@ -111,6 +111,18 @@ private:
     
     AStar::Ptr a_star_;
 
+    ros::Subscriber rcdemoSub;
+    double rc_input[4] = {0}; // normalized values;
+    ros::Time last_rcdemo_time;
+    ros::Timer calcWPTimer;
+    enum ControlState {
+        Hover,
+        Manual,
+        Assistance,
+        RVizInput
+    } control_state;
+    double cruiseVel;
+
 public:
     GlobalPlanner(const Config &conf,
                   ros::NodeHandle &nh_)
@@ -135,15 +147,20 @@ public:
         targetSub = nh.subscribe(config.targetTopic, 1, &GlobalPlanner::targetCallBack, this,
                                  ros::TransportHints().tcpNoDelay());
 
+        rcdemoSub = nh.subscribe("/rc_demo", 10, &GlobalPlanner::rcdemoCallback, this, ros::TransportHints().tcpNoDelay());
+
         mainTimer = nh.createTimer(ros::Duration(0.01), &GlobalPlanner::mainLoop , this);
         visTimer = nh.createTimer(ros::Duration(0.05), &GlobalPlanner::visCallback, this);
-        collisionCheckTimer = nh.createTimer(ros::Duration(0.25), &GlobalPlanner::collisionCheckCallback, this);
+        // collisionCheckTimer = nh.createTimer(ros::Duration(0.25), &GlobalPlanner::collisionCheckCallback, this);
+        calcWPTimer = nh.createTimer(ros::Duration(0.5), &GlobalPlanner::calcWaypointCallback, this);
 
         map_pub = nh.advertise<sensor_msgs::PointCloud2>("/voxel_map/occupancy", 10);
         offboard_cmd_pub = nh.advertise<mavros_msgs::PositionTarget>("/mavros/setpoint_raw/local", 1);
         
         a_star_.reset(new AStar);
         a_star_->initGridMap(voxel_map::VoxelMap::Ptr(&voxelMap), Eigen::Vector3i(256, 256, 256));
+
+        control_state = ControlState::Hover;
     }
 
     inline void mapCallBack(const sensor_msgs::PointCloud2::ConstPtr &msg)
@@ -263,6 +280,22 @@ public:
             ros::Time t[10];
             t[0] = ros::Time::now();
 
+            Eigen::Vector3d iniVel = Eigen::Vector3d::Zero();
+            Eigen::Vector3d iniAcc = Eigen::Vector3d::Zero();
+            if (traj.getPieceNum() > 0)
+            {
+                const double delta = ros::Time::now().toSec() - trajStamp;
+                if (delta > 0.0 && delta < traj.getTotalDuration())
+                {
+                    if (voxelMap.query(traj.getPos(delta)) == 0)
+                    {
+                        startGoal[0] = traj.getPos(delta);
+                        iniVel = traj.getVel(delta);
+                        iniAcc = traj.getAcc(delta);
+                    }
+                }
+            }
+
             std::vector<Eigen::Vector3d> route;
             if (a_star_->AstarSearch(voxelMap.getScale(), startGoal[0], startGoal[1])) {
                 std::vector<Eigen::Vector3d> a_star_path = a_star_->getPath();
@@ -270,30 +303,29 @@ public:
             }
             else
             {
-            sfc_gen::planPath<voxel_map::VoxelMap>(startGoal[0],
-                                                   startGoal[1],
-                                                   voxelMap.getOrigin(),
-                                                   voxelMap.getCorner(),
-                                                   &voxelMap, 0.03,
-                                                   route);
-            route = shrinkPath(route);
+                ROS_WARN("a_star fail! Path deleted!");
+                t[1] = ros::Time::now();
+                std::cout << "[compute time] plan : " << (t[1] - t[0]).toSec() << " s" << std::endl;
+                startGoal.clear();
+                traj.clear();
+                return;
             }
-
-            std::vector<Eigen::MatrixX4d> hPolys;
-            std::vector<Eigen::Vector3d> pc;
-            voxelMap.getSurf(pc);
-
-            sfc_gen::convexCover(route,
-                                 pc,
-                                 voxelMap.getOrigin(),
-                                 voxelMap.getCorner(),
-                                 7.0,
-                                 3.0,
-                                 hPolys);
-            sfc_gen::shortCut(hPolys);
 
             if (route.size() > 1)
             {
+                std::vector<Eigen::MatrixX4d> hPolys;
+                std::vector<Eigen::Vector3d> pc;
+                voxelMap.getSurf(pc);
+
+                sfc_gen::convexCover(route,
+                                    pc,
+                                    voxelMap.getOrigin(),
+                                    voxelMap.getCorner(),
+                                    7.0,
+                                    3.0,
+                                    hPolys);
+                sfc_gen::shortCut(hPolys);
+
                 visualizer.visualizePolytope(hPolys);
 
                 Eigen::Matrix3d iniState;
@@ -301,7 +333,7 @@ public:
                 if (!state.initialized) {
                     iniState << route.front(), Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero();
                 } else {
-                    iniState << route.front(), state.vel, Eigen::Vector3d::Zero();
+                    iniState << startGoal[0], iniVel, iniAcc;
                 }
                 if (startGoal.back() != commandGoal) {
                     double finVelmag = std::min(config.maxVelMag, (commandGoal - startGoal.back()).norm());
@@ -321,7 +353,7 @@ public:
                 Eigen::VectorXd magnitudeBounds(5);
                 Eigen::VectorXd penaltyWeights(5);
                 Eigen::VectorXd physicalParams(6);
-                magnitudeBounds(0) = config.maxVelMag;
+                magnitudeBounds(0) = (control_state == ControlState::Assistance) ? cruiseVel : config.maxVelMag;
                 magnitudeBounds(1) = config.maxBdrMag;
                 magnitudeBounds(2) = config.maxTiltAngle;
                 magnitudeBounds(3) = config.minThrust;
@@ -367,6 +399,10 @@ public:
                 t[1] = ros::Time::now();
                 std::cout << "[compute time] plan : " << (t[1] - t[0]).toSec() << " s" << std::endl;
             }
+            else
+            {
+                traj.clear();
+            }
         }
     }
 
@@ -407,6 +443,7 @@ public:
                 startGoal.emplace_back(goal);
 
                 plan();
+                control_state = ControlState::RVizInput;
             }
             else
             {
@@ -419,6 +456,10 @@ public:
     inline void visCallback(const ros::TimerEvent & /*event*/)
     {
         publishMap();
+        if (state.initialized)
+        {
+            visualizer.visualizePath(state.pos, 200);
+        }
     }
 
     inline void publishMap()
@@ -446,58 +487,8 @@ public:
 
     inline void mainLoop(const ros::TimerEvent & /*event*/)
     {
-        // process();
         movingVoxel();
         offboardCommand();
-    }
-
-    inline void process()
-    {
-        Eigen::VectorXd physicalParams(6);
-        physicalParams(0) = config.vehicleMass;
-        physicalParams(1) = config.gravAcc;
-        physicalParams(2) = config.horizDrag;
-        physicalParams(3) = config.vertDrag;
-        physicalParams(4) = config.parasDrag;
-        physicalParams(5) = config.speedEps;
-
-        flatness::FlatnessMap flatmap;
-        flatmap.reset(physicalParams(0), physicalParams(1), physicalParams(2),
-                      physicalParams(3), physicalParams(4), physicalParams(5));
-
-        if (traj.getPieceNum() > 0)
-        {
-            const double delta = ros::Time::now().toSec() - trajStamp;
-            if (delta > 0.0 && delta < traj.getTotalDuration())
-            {
-                double thr;
-                Eigen::Vector4d quat;
-                Eigen::Vector3d omg;
-
-                flatmap.forward(traj.getVel(delta),
-                                traj.getAcc(delta),
-                                traj.getJer(delta),
-                                0.0, 0.0,
-                                thr, quat, omg);
-                double speed = traj.getVel(delta).norm();
-                double bodyratemag = omg.norm();
-                double tiltangle = acos(1.0 - 2.0 * (quat(1) * quat(1) + quat(2) * quat(2)));
-                std_msgs::Float64 speedMsg, thrMsg, tiltMsg, bdrMsg;
-                speedMsg.data = speed;
-                thrMsg.data = thr;
-                tiltMsg.data = tiltangle;
-                bdrMsg.data = bodyratemag;
-                visualizer.speedPub.publish(speedMsg);
-                visualizer.thrPub.publish(thrMsg);
-                visualizer.tiltPub.publish(tiltMsg);
-                visualizer.bdrPub.publish(bdrMsg);
-
-                visualizer.visualizeSphere(traj.getPos(delta),
-                                           config.dilateRadius);
-
-                state.Update(traj.getPos(delta), traj.getVel(delta), quat);
-            }
-        }
     }
 
     inline void movingVoxel()
@@ -523,6 +514,8 @@ public:
     
     inline void offboardCommand()
     {
+        if (!state.initialized) return;
+
         mavros_msgs::PositionTarget msg;
         msg.header.stamp = ros::Time::now();
         msg.header.frame_id = "map";
@@ -534,29 +527,82 @@ public:
         msg.type_mask |= msg.FORCE;
         msg.type_mask |= msg.IGNORE_YAW_RATE;
 
-        if (traj.getPieceNum() > 0)
+        if (control_state == ControlState::Hover)
         {
-            const double delta = ros::Time::now().toSec() - trajStamp;
-            if (delta > 0.0 && delta < traj.getTotalDuration())
+            if ((cmdPosition - state.pos).norm() > 0.5)
+                cmdPosition = state.pos;
+            if (cos(cmdYaw - state.yaw) < 0.8)
+                cmdYaw = state.yaw;
+        }
+        else if (control_state == ControlState::Manual)
+        {
+            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
             {
-                float cmdYaw_temp = cmdYaw;
-                if (traj.getVel(delta).norm() > 0.1)
-                {
-                    cmdYaw = atan2(traj.getVel(delta).y(), traj.getVel(delta).x());
-                }
+                control_state = ControlState::Hover;
+                return;
+            }
 
-                if (cos(cmdYaw - cmdYaw_temp) > 0.5)
+            cmdPosition = state.pos;
+            cmdYaw = state.yaw;
+
+            Eigen::Vector3d control(rc_input[0] * 2.0, rc_input[1] * 2.0, rc_input[2]);
+            cmdPosition += Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
+            cmdYaw += rc_input[3] * 0.5;
+        }
+        else if (control_state == ControlState::Assistance)
+        {
+            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
+            {
+                control_state = ControlState::Hover;
+                return;
+            }
+
+            cmdPosition = state.pos;
+            cmdYaw = state.yaw;
+
+            if (traj.getPieceNum() > 0)
+            {
+                const double delta = ros::Time::now().toSec() - trajStamp;
+                if (delta > 0.0 && delta < traj.getTotalDuration())
                 {
                     cmdPosition.x() = traj.getPos(delta).x();
                     cmdPosition.y() = traj.getPos(delta).y();
                     cmdPosition.z() = traj.getPos(delta).z();
-                } 
+                }
+
+                cmdYaw += rc_input[3] * 0.5;
+            }
+            else
+            {
+                cmdPosition.z() += rc_input[2] * 1.0;
+                cmdYaw += rc_input[3] * 0.5;
             }
         }
-        else if (state.initialized)
+        else if (control_state == ControlState::RVizInput)
         {
-            cmdPosition = state.pos;
-            cmdYaw = state.yaw;
+            if (traj.getPieceNum() > 0)
+            {
+                const double delta = ros::Time::now().toSec() - trajStamp;
+                if (delta > 0.0 && delta < traj.getTotalDuration())
+                {
+                    float cmdYaw_temp = cmdYaw;
+                    if (traj.getVel(delta).norm() > 0.1)
+                    {
+                        cmdYaw = atan2(traj.getVel(delta).y(), traj.getVel(delta).x());
+                    }
+
+                    if (cos(cmdYaw - cmdYaw_temp) > 0.5)
+                    {
+                        cmdPosition.x() = traj.getPos(delta).x();
+                        cmdPosition.y() = traj.getPos(delta).y();
+                        cmdPosition.z() = traj.getPos(delta).z();
+                    }
+                }
+            }
+            else
+            {
+                control_state = ControlState::Hover;
+            }
         }
 
         msg.position.x = cmdPosition.x();
@@ -589,6 +635,12 @@ public:
             if (delta + config.timeFoward > traj.getTotalDuration() && commandGoal != startGoal.back())
             {
                 need_replan = true;
+            }
+            else if (delta > traj.getTotalDuration())
+            {
+                ROS_WARN("Since vehicle has arrived at goal, remove traj.");
+                startGoal.clear();
+                traj.clear();
             }
             else
             {
@@ -647,6 +699,184 @@ public:
             visualizer.visualizeStartGoal(commandGoal, 0.5, 1);
             plan();
         }
+    }
+
+    std::vector<std::string> split(std::string str)
+    {
+        std::string temp = "";
+        std::vector<std::string> ret;
+        for (auto x : str) {
+            if (x == ',') {
+                ret.push_back(temp);
+                temp = "";
+            }
+            else {
+                temp = temp + x;
+            }
+        }
+
+        ret.push_back(temp);
+        return ret;
+    }
+
+    void rcdemoCallback(const std_msgs::String& msg)
+    {
+        auto splited = split(msg.data);
+        if (splited.size() == 0) return;
+
+        if (splited.front() == "c")
+        {
+            rc_input[0] = std::stod(splited[2]);
+            rc_input[1] = std::stod(splited[1]);
+            rc_input[2] = std::stod(splited[4]);
+            rc_input[3] = std::stod(splited[3]);
+            last_rcdemo_time = ros::Time::now();
+            control_state = ControlState::Manual;
+
+            if (traj.getPieceNum() > 0) traj.clear();
+        }
+        else if (splited.front() == "w")
+        {
+            rc_input[0] = std::stod(splited[2]);
+            rc_input[1] = std::stod(splited[1]);
+            rc_input[2] = std::stod(splited[4]);
+            rc_input[3] = std::stod(splited[3]);
+            last_rcdemo_time = ros::Time::now();
+
+            if (rc_input[0] > 0)
+            {
+                control_state = ControlState::Assistance;
+            }
+            else
+            {
+                control_state = ControlState::Manual;
+                if (traj.getPieceNum() > 0) traj.clear();
+            }
+        }
+        else if (splited.front() == "d")
+        {
+            startGoal.clear();
+            traj.clear();
+            ROS_WARN("Path deleted!");
+            control_state = ControlState::Hover;
+        }
+        else if (splited.front() == "p")
+        {
+            setAstarBound();
+            std::cout << "test" << std::endl;
+        }
+    }
+
+    void setAstarBound()
+    {
+        double hFov = 56.0 / 2.0 * 0.01745329;
+        double vFov = 40.0 / 2.0 * 0.01745329;
+
+        Eigen::Vector3d foward = Eigen::Vector3d(13.0, 0, 0);
+        Eigen::Vector3d back = Eigen::Vector3d(-0.5, 0, 0);
+        Eigen::Vector3d focal = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * back + state.pos;
+        Eigen::Vector3d max_range_center = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * foward + focal;
+
+        Eigen::MatrixX4d Poly(6, 4);
+        Poly.leftCols<3>().row(0) <<  cos(state.yaw), sin(state.yaw), 0; // front
+        Poly.leftCols<3>().row(1) << -cos(state.yaw),-sin(state.yaw), 0; // back
+        Poly.leftCols<3>().row(2) << -sin(hFov + state.yaw), cos(hFov + state.yaw), 0; // left
+        Poly.leftCols<3>().row(3) << -sin(hFov - state.yaw),-cos(hFov - state.yaw), 0; // right
+        Poly.leftCols<3>().row(4) << -sin(vFov)*cos(state.yaw),-sin(vFov)*sin(state.yaw), cos(vFov); // up
+        Poly.leftCols<3>().row(5) << -sin(vFov)*cos(state.yaw),-sin(vFov)*sin(state.yaw),-cos(vFov); // bottom
+
+        Poly.rightCols<1>().row(0) << -Poly.leftCols<3>().row(0).dot(max_range_center);
+        for (int i = 1; i < Poly.rows(); i++)
+            Poly.rightCols<1>().row(i) << -Poly.leftCols<3>().row(i).dot(focal);
+
+        a_star_->setSearchBound(Poly);
+
+        // visualize A* search bound
+        std::vector<Eigen::MatrixX4d> hPolys;
+        hPolys.push_back(Poly);
+        visualizer.visualizePolytope(hPolys, 1);
+    }
+
+    void calcWaypointCallback(const ros::TimerEvent & /*event*/)
+    {
+        if (control_state != ControlState::Assistance || (ros::Time::now() - last_rcdemo_time).toSec() > 3.0)
+        {
+            return;
+        }
+
+        Eigen::Vector3d waypoint = calcWaypoint();
+        if ((waypoint - state.pos).norm() > voxelMap.getScale())
+        {
+            if (voxelMap.query(waypoint) != 0) return;
+            setAstarBound();
+            if (!a_star_->checkSearchBound(waypoint)) return;
+
+            startGoal.clear();
+            startGoal.emplace_back(state.pos);
+            startGoal.emplace_back(waypoint);
+            commandGoal = waypoint;
+            plan();
+            control_state = ControlState::Assistance;
+
+            visualizer.visualizeStartGoal(waypoint, 0.5, 1);
+        }
+        else if (traj.getPieceNum() > 0)
+        {
+            startGoal.clear();
+            traj.clear();
+            ROS_WARN("Path deleted!");
+        }
+    }
+
+    Eigen::Vector3d calcWaypoint()
+    {
+        const double control_mag_max = 10.0;
+        const double control_mag_min = 3.0;
+
+        Eigen::Vector3d control(rc_input[0], rc_input[1], 0);
+        if (control.norm() < 0.1)
+        {
+            return state.pos;
+        }
+        else
+        {
+            cruiseVel = control.norm() * config.maxVelMag;
+        }
+
+        auto ray_cast = [&](const Eigen::Vector3d &start, const Eigen::Vector3d &end, const double dt) {
+            const double eps = 1.0e-6;
+            Eigen::Vector3d sub = (end - start);
+            const double length = sub.norm();
+            const Eigen::Vector3d dir = sub.normalized();
+            Eigen::Vector3i pos_p = voxelMap.posD2I(start);
+
+            for (double t = dt; t < length + eps; t += dt)
+            {
+                Eigen::Vector3i pos_n = voxelMap.posD2I(start + dir * t);
+                if (pos_p != pos_n)
+                {
+                    if (voxelMap.query(pos_n) != 0)
+                    {
+                        return voxelMap.posI2D(pos_n);
+                    }
+                    pos_p = pos_n;
+                }
+            }
+
+            return end;
+        };
+
+        Eigen::Vector3d test_control = control.normalized() * control_mag_max;
+        Eigen::Vector3d test_wp = state.pos + Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * test_control;
+        double control_mag = (ray_cast(state.pos, test_wp, 0.05) - state.pos).norm() * 0.9;
+        control_mag = control_mag < control_mag_min ? control_mag_max : control_mag;
+
+        control = control.normalized() * control_mag;
+        control.z() = control.norm() * rc_input[2] * 0.4;
+
+        Eigen::Vector3d waypoint = state.pos + Eigen::AngleAxisd(state.yaw + rc_input[3] * 0.7, Eigen::Vector3d::UnitZ()) * control;
+
+        return waypoint;
     }
 };
 

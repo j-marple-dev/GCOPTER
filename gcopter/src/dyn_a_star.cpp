@@ -211,6 +211,11 @@ bool AStar::AstarSearch(const double step_size, Vector3d start_pt, Vector3d end_
                         continue;
                     }
 
+                    if (!checkSearchBound(Index2Coord(neighborPtr->index)))
+                    {
+                        continue;
+                    }
+
                     double static_cost = sqrt(dx * dx + dy * dy + dz * dz);
                     tentative_gScore = current->gScore + static_cost;
 

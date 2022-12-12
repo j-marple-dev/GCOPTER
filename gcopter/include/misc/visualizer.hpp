@@ -16,6 +16,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <visualization_msgs/Marker.h>
 #include <visualization_msgs/MarkerArray.h>
+#include <nav_msgs/Path.h>
 
 // Visualizer for the planner
 class Visualizer
@@ -33,6 +34,8 @@ private:
     ros::Publisher meshPub;
     ros::Publisher edgePub;
     ros::Publisher spherePub;
+    ros::Publisher pathPub;
+    nav_msgs::Path path_;
 
 public:
     ros::Publisher speedPub;
@@ -54,6 +57,7 @@ public:
         thrPub = nh.advertise<std_msgs::Float64>("/visualizer/total_thrust", 1000);
         tiltPub = nh.advertise<std_msgs::Float64>("/visualizer/tilt_angle", 1000);
         bdrPub = nh.advertise<std_msgs::Float64>("/visualizer/body_rate", 1000);
+        pathPub = nh.advertise<nav_msgs::Path>("/visualizer/path", 10);
     }
 
     // Visualize the trajectory and its front-end path
@@ -162,7 +166,7 @@ public:
     }
 
     // Visualize some polytopes in H-representation
-    inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys)
+    inline void visualizePolytope(const std::vector<Eigen::MatrixX4d> &hPolys, const int id = 0)
     {
 
         // Due to the fact that H-representation cannot be directly visualized
@@ -193,17 +197,29 @@ public:
         // RVIZ support tris for visualization
         visualization_msgs::Marker meshMarker, edgeMarker;
 
-        meshMarker.id = 0;
+        meshMarker.id = id;
         meshMarker.header.stamp = ros::Time::now();
         meshMarker.header.frame_id = "map";
         meshMarker.pose.orientation.w = 1.00;
         meshMarker.action = visualization_msgs::Marker::ADD;
         meshMarker.type = visualization_msgs::Marker::TRIANGLE_LIST;
         meshMarker.ns = "mesh";
+
+        if (id == 0)
+        {
         meshMarker.color.r = 0.00;
         meshMarker.color.g = 0.00;
         meshMarker.color.b = 1.00;
         meshMarker.color.a = 0.15;
+        }
+        else
+        {
+        meshMarker.color.r = 1.00;
+        meshMarker.color.g = 1.00;
+        meshMarker.color.b = 0.00;
+        meshMarker.color.a = 0.15;
+        }
+
         meshMarker.scale.x = 1.0;
         meshMarker.scale.y = 1.0;
         meshMarker.scale.z = 1.0;
@@ -321,6 +337,31 @@ public:
             sphereMarkers.header.stamp = ros::Time::now();
         }
         spherePub.publish(sphereMarkers);
+    }
+
+    inline void visualizePath(const Eigen::Vector3d &new_pose, const int point_num)
+    {
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = ros::Time::now();
+        pose_stamped.header.frame_id = "map";
+        pose_stamped.pose.position.x = new_pose.x();
+        pose_stamped.pose.position.y = new_pose.y();
+        pose_stamped.pose.position.z = new_pose.z();
+        pose_stamped.pose.orientation.w = 1;
+
+        path_.header.stamp = ros::Time::now();
+        path_.header.seq += 1;
+        path_.header.frame_id = "map";
+
+        if ((int)path_.poses.size() > point_num)
+        {
+            int delete_size = point_num * 0.05;
+            std::vector<geometry_msgs::PoseStamped> new_vector(path_.poses.begin() + delete_size + 1, path_.poses.end());
+            path_.poses = new_vector;
+        }
+        path_.poses.push_back(pose_stamped);
+
+        pathPub.publish(path_);
     }
 };
 

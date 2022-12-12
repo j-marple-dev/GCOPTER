@@ -41,5 +41,3 @@ SmoothingEps:               1.0e-2
 IntegralIntervs:            16
 
 RelCostTol:                 1.0e-5
-
-TimeFoward:                 1.0

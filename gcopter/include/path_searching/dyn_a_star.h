@@ -77,6 +77,9 @@ private:
 
 	int rounds_{0};
 
+	bool use_search_bound_ = false;
+	Eigen::MatrixX4d PolyBound_;
+
 public:
 	typedef std::shared_ptr<AStar> Ptr;
 
@@ -88,6 +91,10 @@ public:
 	bool AstarSearch(const double step_size, Eigen::Vector3d start_pt, Eigen::Vector3d end_pt, const double timeout = 0.2);
 
 	std::vector<Eigen::Vector3d> getPath();
+
+	inline void setSearchBound(const Eigen::MatrixX4d &Poly);
+	inline void disableSearchBound() { use_search_bound_ = false; };
+	inline bool checkSearchBound(const Eigen::Vector3d &pos);
 };
 
 inline double AStar::getHeu(GridNodePtr node1, GridNodePtr node2)
@@ -112,5 +119,24 @@ inline bool AStar::Coord2Index(const Eigen::Vector3d &pt, Eigen::Vector3i &idx) 
 
 	return true;
 };
+
+inline void AStar::setSearchBound(const Eigen::MatrixX4d &Poly)
+{
+	use_search_bound_ = true;
+	PolyBound_ = Poly;
+}
+
+inline bool AStar::checkSearchBound(const Eigen::Vector3d &pos)
+{
+	if (!use_search_bound_) return true;
+
+	for (int i = 0; i < PolyBound_.rows(); i++)
+	{
+		double testVal = PolyBound_.leftCols<3>().row(i).dot(pos) + PolyBound_.row(i)(3);
+		if (testVal > 0) return false;
+	}
+
+	return true;
+}
 
 #endif
