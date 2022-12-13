@@ -7,7 +7,6 @@ set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -fPIC")
 
 find_package(Eigen3 REQUIRED)
-find_package(ompl REQUIRED)
 find_package(PCL 1.7 REQUIRED)
 
 find_package(catkin REQUIRED COMPONENTS
@@ -20,7 +19,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 include_directories(
     ${catkin_INCLUDE_DIRS}
-    ${OMPL_INCLUDE_DIRS}
     ${EIGEN3_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
     include
@@ -28,20 +26,12 @@ include_directories(
 
 catkin_package()
 
-add_executable(global_planning src/global_planning.cpp)
-
-target_link_libraries(global_planning
-  ${OMPL_LIBRARIES}
-  ${catkin_LIBRARIES}
-)
-
 add_executable(gcopter_realtime
   src/gcopter_realtime.cpp
   src/dyn_a_star.cpp
 )
 
 target_link_libraries(gcopter_realtime
-  ${OMPL_LIBRARIES}
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
 )
