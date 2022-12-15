@@ -26,6 +26,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include <mavros_msgs/PositionTarget.h>
+#include <mavros_msgs/RCIn.h>
 
 #include "misc/vehicle_state.hpp"
 #include "path_searching/dyn_a_star.h"
@@ -111,9 +112,9 @@ private:
     
     AStar::Ptr a_star_;
 
-    ros::Subscriber rcdemoSub;
+    ros::Subscriber rcdemoSub, rcinSub;
     double rc_input[4] = {0}; // normalized values;
-    ros::Time last_rcdemo_time;
+    ros::Time last_rc_time;
     ros::Timer calcWPTimer;
     enum ControlState {
         Hover,
@@ -148,6 +149,7 @@ public:
                                  ros::TransportHints().tcpNoDelay());
 
         rcdemoSub = nh.subscribe("/rc_demo", 10, &GlobalPlanner::rcdemoCallback, this, ros::TransportHints().tcpNoDelay());
+        rcinSub = nh.subscribe("/mavros/rc/in", 10, &GlobalPlanner::rcinCallback, this, ros::TransportHints().tcpNoDelay());
 
         mainTimer = nh.createTimer(ros::Duration(0.01), &GlobalPlanner::mainLoop , this);
         visTimer = nh.createTimer(ros::Duration(0.05), &GlobalPlanner::visCallback, this);
@@ -536,7 +538,7 @@ public:
         }
         else if (control_state == ControlState::Manual)
         {
-            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
+            if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
                 control_state = ControlState::Hover;
                 return;
@@ -551,7 +553,7 @@ public:
         }
         else if (control_state == ControlState::Assistance)
         {
-            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
+            if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
                 control_state = ControlState::Hover;
                 return;
@@ -730,7 +732,7 @@ public:
             rc_input[1] = std::stod(splited[1]);
             rc_input[2] = std::stod(splited[4]);
             rc_input[3] = std::stod(splited[3]);
-            last_rcdemo_time = ros::Time::now();
+            last_rc_time = ros::Time::now();
             control_state = ControlState::Manual;
 
             if (traj.getPieceNum() > 0) traj.clear();
@@ -741,7 +743,7 @@ public:
             rc_input[1] = std::stod(splited[1]);
             rc_input[2] = std::stod(splited[4]);
             rc_input[3] = std::stod(splited[3]);
-            last_rcdemo_time = ros::Time::now();
+            last_rc_time = ros::Time::now();
 
             if (rc_input[0] > 0)
             {
@@ -764,6 +766,35 @@ public:
         {
             setAstarBound();
             std::cout << "test" << std::endl;
+        }
+    }
+
+    void rcinCallback(const mavros_msgs::RCIn& msg)
+    {
+        double chan_normalized[4];
+        double padding = 100;
+
+        for (int i = 0; i < 4; i++)
+        {
+            chan_normalized[i] = (double)(msg.channels[i] - 1500) / (1000.0 - padding);
+            chan_normalized[i] = std::min(1.0, std::max(-1.0, chan_normalized[i]));
+        }
+
+        rc_input[0] =  chan_normalized[1]; // pitch -> x
+        rc_input[1] = -chan_normalized[0]; // roll -> y
+        rc_input[2] =  chan_normalized[3]; // throttle -> z
+        rc_input[3] = -chan_normalized[2]; // yaw -> yawrate 
+
+        last_rc_time = ros::Time::now();
+
+        if (rc_input[0] > 0)
+        {
+            control_state = ControlState::Assistance;
+        }
+        else
+        {
+            control_state = ControlState::Manual;
+            if (traj.getPieceNum() > 0) traj.clear();
         }
     }
 
@@ -799,7 +830,7 @@ public:
 
     void calcWaypointCallback(const ros::TimerEvent & /*event*/)
     {
-        if (control_state != ControlState::Assistance || (ros::Time::now() - last_rcdemo_time).toSec() > 3.0)
+        if (control_state != ControlState::Assistance || (ros::Time::now() - last_rc_time).toSec() > 3.0)
         {
             return;
         }
