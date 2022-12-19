@@ -2,13 +2,14 @@
 <launch>
   <!-- size of map, change the size inflate x, y, z according to your application -->
   <arg name="resolution" value="0.1"/>
-  <arg name="map_size_x" value="40.0"/>
-  <arg name="map_size_y" value="40.0"/>
+  <arg name="map_size_x" value="16.0"/>
+  <arg name="map_size_y" value="16.0"/>
   <arg name="map_size_z" value="10.0"/>
   <arg name="obstacles_inflation" value="0.199"/>
 
   <arg name="odometry_topic"    value="/mavros/local_position/odom" />
-  <arg name="cloud_topic"       value="/camera/depth/points"/>
+  <!-- <arg name="cloud_topic"       value="/camera/depth/points"/> -->
+  <arg name="cloud_topic"       value="/royale_camera_driver/point_cloud"/>
   <!-- <arg name="cloud_topic"       value="/stereo/points2"/> -->
   <arg name="camera_pose_topic" value="camera_pose_topic_none"/>
   <arg name="depth_topic"       value="depth_topic_none"/>
@@ -26,7 +27,7 @@
     <param name="grid_map/map_size_z"             value="$(arg map_size_z)" /> 
     <param name="grid_map/local_update_range_x"   value="9.5" /> 
     <param name="grid_map/local_update_range_y"   value="9.5" /> 
-    <param name="grid_map/local_update_range_z"   value="3.5" /> 
+    <param name="grid_map/local_update_range_z"   value="4.5" /> 
     <param name="grid_map/obstacles_inflation"    value="$(arg obstacles_inflation)" /> 
     <param name="grid_map/local_map_margin"       value="30"/>
     <param name="grid_map/ground_height"          value="0"/>
@@ -39,13 +40,13 @@
     <param name="grid_map/use_depth_filter"       value="true"/>
     <param name="grid_map/depth_filter_tolerance" value="0.15"/>
     <param name="grid_map/depth_filter_maxdist"   value="15.0"/>
-    <param name="grid_map/depth_filter_mindist"   value="0.2"/>
+    <param name="grid_map/depth_filter_mindist"   value="1.0"/>
     <param name="grid_map/depth_filter_margin"    value="1"/>
     <param name="grid_map/k_depth_scaling_factor" value="1000.0"/>
     <param name="grid_map/skip_pixel"             value="2"/>
     <!-- local fusion -->
     <param name="grid_map/p_hit"  value="0.65"/>
-    <param name="grid_map/p_miss" value="0.35"/>
+    <param name="grid_map/p_miss" value="0.25"/>
     <param name="grid_map/p_min"  value="0.12"/>
     <param name="grid_map/p_max"  value="0.90"/>
     <param name="grid_map/p_occ"  value="0.80"/>

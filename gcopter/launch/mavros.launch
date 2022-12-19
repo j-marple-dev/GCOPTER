@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<launch>
+
+<!-- Launch MavROS -->
+  <include file="$(find mavros)/launch/node.launch">
+      <arg name="pluginlists_yaml" value="$(find mavros)/launch/px4_pluginlists.yaml" />
+      <arg name="config_yaml" value="$(find mavros)/launch/px4_config.yaml" />
+      <arg name="fcu_url" value="/dev/ttyPixhawk:921600" />
+      <arg name="gcs_url" value="" />
+      <arg name="tgt_system" value="1" />
+      <arg name="tgt_component" value="1" />
+  </include>
+
+</launch>

@@ -788,7 +788,7 @@ void GridMap::odomCallback(const nav_msgs::OdometryConstPtr &odom)
 
   md_.has_odom_ = true;
 
-  Eigen::Vector3d change_unit(10, 10, 2.5);
+  Eigen::Vector3d change_unit(1, 1, 1);
   Eigen::Vector3d test_orig = mp_.map_origin_ +  mp_.map_size_ / 2.0;
   Eigen::Vector3d test_new = md_.camera_pos_;
   Eigen::Vector3i test_res((int)round((test_new.x() - test_orig.x()) / change_unit.x()),
@@ -844,6 +844,7 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
     {
       pt = latest_cloud.points[i];
       if (isnan(pt.x) || isnan(pt.y) || isnan(pt.z)) continue;
+      if (sqrt(pt.x*pt.x + pt.y*pt.y + pt.z*pt.z) < mp_.depth_filter_mindist_) continue;
       p3d(0) = pt.z, p3d(1) = -pt.x, p3d(2) = -pt.y;
       p3d = camera_r * p3d + md_.camera_pos_;
       md_.proj_points_.push_back(p3d);
