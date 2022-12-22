@@ -310,6 +310,7 @@ public:
                 std::cout << "[compute time] plan : " << (t[1] - t[0]).toSec() << " s" << std::endl;
                 startGoal.clear();
                 traj.clear();
+                visualizer.deletePlans();
                 return;
             }
 
@@ -760,6 +761,7 @@ public:
             startGoal.clear();
             traj.clear();
             ROS_WARN("Path deleted!");
+            visualizer.deletePlans();
             control_state = ControlState::Hover;
         }
         else if (splited.front() == "p")
@@ -856,6 +858,7 @@ public:
             startGoal.clear();
             traj.clear();
             ROS_WARN("Path deleted!");
+            visualizer.deletePlans();
         }
     }
 
