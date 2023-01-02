@@ -86,11 +86,6 @@ class Stick(ClickableGUI):
         self.updated = False
 
     def set_pose(self, x=float, y=float):
-        if abs(x) < self.radius * 0.15:
-            x = 0
-        if abs(y) < self.radius * 0.15:
-            y = 0
-
         dist = math.sqrt(x * x + y * y)
 
         if (dist <= self.radius):
