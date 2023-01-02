@@ -472,11 +472,9 @@ public:
 
         pcl::PointCloud<pcl::PointXYZ> cloud;
 
-        voxelMap.iterateVoxelPosVal([&](Eigen::Vector3d pos, uint8_t val) {
-            if (val != 0) {
-                cloud.points.emplace_back(pcl::PointXYZ(pos(0), pos(1), pos(2)));
-            }
-        });
+        std::vector<Eigen::Vector3d> pc;
+        voxelMap.getSurf(pc);
+        for (auto p : pc) cloud.points.emplace_back(p(0), p(1), p(2));
 
         cloud.width = cloud.points.size();
         cloud.height = 1;

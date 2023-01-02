@@ -253,22 +253,6 @@ namespace voxel_map
             return ((pos - o) / scale).cast<int>();
         }
 
-        template<typename Functor>
-        inline void iterateVoxelPosVal(Functor f) const
-        {
-            for (int x = 0; x < mapSize(0); x++)
-            {
-                for (int y = 0; y < mapSize(1); y++)
-                {
-                    for (int z = 0; z < mapSize(2); z++)
-                    {
-                        Eigen::Vector3i id(x, y, z);
-                        f(posI2D(id), voxels[id.dot(step)]);
-                    }
-                }
-            }
-        }
-
         inline void boundIndex(Eigen::Vector3i &id)
         {
             id(0) = id(0) > 0 ? id(0) : 0; id(0) = id(0) < mapSize(0) - 1 ? id(0) : mapSize(0) - 1;
