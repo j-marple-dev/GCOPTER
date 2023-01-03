@@ -5,14 +5,15 @@
   <arg name="map_size_x" value="16.0"/>
   <arg name="map_size_y" value="16.0"/>
   <arg name="map_size_z" value="10.0"/>
-  <arg name="obstacles_inflation" value="0.199"/>
+  <arg name="obstacles_inflation" value="0.099"/>
 
   <arg name="odometry_topic"    value="/mavros/local_position/odom" />
   <!-- <arg name="cloud_topic"       value="/camera/depth/points"/> -->
-  <arg name="cloud_topic"       value="/royale_camera_driver/point_cloud"/>
+  <arg name="cloud_topic"       value="cloud_none"/>
   <!-- <arg name="cloud_topic"       value="/stereo/points2"/> -->
   <arg name="camera_pose_topic" value="camera_pose_topic_none"/>
-  <arg name="depth_topic"       value="depth_topic_none"/>
+  <!-- <arg name="depth_topic"       value="/camera/depth/image_raw"/> -->
+  <arg name="depth_topic"       value="/royale_camera_driver/depth_image"/>
 
   <node pkg="plan_env" type="grid_map" name="grid_map_node" output="screen">
     <!-- grid map topic -->
@@ -25,22 +26,27 @@
     <param name="grid_map/map_size_x"             value="$(arg map_size_x)" /> 
     <param name="grid_map/map_size_y"             value="$(arg map_size_y)" /> 
     <param name="grid_map/map_size_z"             value="$(arg map_size_z)" /> 
-    <param name="grid_map/local_update_range_x"   value="9.5" /> 
-    <param name="grid_map/local_update_range_y"   value="9.5" /> 
-    <param name="grid_map/local_update_range_z"   value="4.5" /> 
+    <param name="grid_map/local_update_range_x"   value="4.5" /> 
+    <param name="grid_map/local_update_range_y"   value="4.5" /> 
+    <param name="grid_map/local_update_range_z"   value="3.5" /> 
     <param name="grid_map/obstacles_inflation"    value="$(arg obstacles_inflation)" /> 
     <param name="grid_map/local_map_margin"       value="30"/>
     <param name="grid_map/ground_height"          value="0"/>
-    <!-- camera parameter -->
-    <param name="grid_map/cx" value="321.04638671875"/>
-    <param name="grid_map/cy" value="243.44969177246"/>
-    <param name="grid_map/fx" value="387.22924804687"/>
-    <param name="grid_map/fy" value="387.22924804687"/>
+    <!-- camera parameter (Sim) -->
+    <!-- <param name="grid_map/cx" value="112.5"/>
+    <param name="grid_map/cy" value="86.5"/>
+    <param name="grid_map/fx" value="210.64"/>
+    <param name="grid_map/fy" value="210.64"/> -->
+    <!-- camera parameter (PMD Flexx2)-->
+    <param name="grid_map/cx" value="110.5135"/>
+    <param name="grid_map/cy" value="82.9822"/>
+    <param name="grid_map/fx" value="206.8496"/>
+    <param name="grid_map/fy" value="206.8496"/>
     <!-- depth filter -->
     <param name="grid_map/use_depth_filter"       value="true"/>
     <param name="grid_map/depth_filter_tolerance" value="0.15"/>
-    <param name="grid_map/depth_filter_maxdist"   value="15.0"/>
-    <param name="grid_map/depth_filter_mindist"   value="1.0"/>
+    <param name="grid_map/depth_filter_maxdist"   value="5.0"/>
+    <param name="grid_map/depth_filter_mindist"   value="0.7"/>
     <param name="grid_map/depth_filter_margin"    value="1"/>
     <param name="grid_map/k_depth_scaling_factor" value="1000.0"/>
     <param name="grid_map/skip_pixel"             value="2"/>
@@ -50,8 +56,8 @@
     <param name="grid_map/p_min"  value="0.12"/>
     <param name="grid_map/p_max"  value="0.90"/>
     <param name="grid_map/p_occ"  value="0.80"/>
-    <param name="grid_map/min_ray_length" value="0.1"/>
-    <param name="grid_map/max_ray_length" value="14.5"/>
+    <param name="grid_map/min_ray_length" value="0.5"/>
+    <param name="grid_map/max_ray_length" value="4.5"/>
 
     <param name="grid_map/virtual_ceil_height"   value="15.5"/>
     <param name="grid_map/visualization_truncate_height"   value="15.4"/>

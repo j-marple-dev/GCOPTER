@@ -1014,6 +1014,25 @@ void GridMap::depthOdomCallback(const sensor_msgs::ImageConstPtr &img,
 
   if (!md_.has_first_depth_)
     md_.has_first_depth_ = true;
+
+  // change origin
+  Eigen::Vector3d change_unit(1, 1, 1);
+  Eigen::Vector3d test_orig = mp_.map_origin_ +  mp_.map_size_ / 2.0;
+  Eigen::Vector3d test_new = md_.camera_pos_;
+  Eigen::Vector3i test_res((int)round((test_new.x() - test_orig.x()) / change_unit.x()),
+                           (int)round((test_new.y() - test_orig.y()) / change_unit.y()),
+                           (int)round((test_new.z() - test_orig.z()) / change_unit.z()));
+
+  if (abs(test_new.x() - test_orig.x()) > change_unit.x() * 2.0 / 3.0) {
+    // std::cout << "change_origin - X direction" << std::endl;
+    change_origin({(double)test_res.x() * change_unit.x(), 0, 0});
+  } else if (abs(test_new.y() - test_orig.y()) > change_unit.y() * 2.0 / 3.0) {
+    // std::cout << "change_origin - Y direction" << std::endl;
+    change_origin({0, (double)test_res.y() * change_unit.y(), 0});
+  } else if (abs(test_new.z() - test_orig.z()) > change_unit.z() * 2.0 / 3.0) {
+    // std::cout << "change_origin - Z direction" << std::endl;
+    change_origin({0, 0, (double)test_res.z() * change_unit.z()});
+  }
 }
 
 // GridMap

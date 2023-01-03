@@ -871,11 +871,11 @@ public:
 
         last_rc_time = ros::Time::now();
 
-        if (rc_input[0] > 0)
-        {
-            control_state = ControlState::Assistance;
-        }
-        else
+        // if (rc_input[0] > 0)
+        // {
+        //     control_state = ControlState::Assistance;
+        // }
+        // else
         {
             control_state = ControlState::Manual;
             if (traj.getPieceNum() > 0) traj.clear();
