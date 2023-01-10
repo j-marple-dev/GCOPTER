@@ -62,6 +62,8 @@ void GridMap::initMap(ros::NodeHandle &nh)
   node_.param("grid_map/frame_id", mp_.frame_id_, string("world"));
   node_.param("grid_map/local_map_margin", mp_.local_map_margin_, 1);
   node_.param("grid_map/ground_height", mp_.ground_height_, 1.0);
+  
+  node_.param("grid_map/rotation_flag", rot_flag_, 0);
 
   mp_.resolution_inv_ = 1 / mp_.resolution_;
   mp_.map_origin_ = Eigen::Vector3d(-x_size / 2.0, -y_size / 2.0, -z_size / 2.0);
@@ -300,6 +302,8 @@ void GridMap::projectDepthImage()
 {
   if (!md_.has_first_depth_)
     return;
+
+  rotImg(md_.depth_image_, rot_flag_);
 
   // md_.proj_points_.clear();
   md_.proj_points_cnt = 0;
@@ -1032,6 +1036,21 @@ void GridMap::depthOdomCallback(const sensor_msgs::ImageConstPtr &img,
   } else if (abs(test_new.z() - test_orig.z()) > change_unit.z() * 2.0 / 3.0) {
     // std::cout << "change_origin - Z direction" << std::endl;
     change_origin({0, 0, (double)test_res.z() * change_unit.z()});
+  }
+}
+
+void GridMap::rotImg(cv::Mat &matImage, int rotflag)
+{
+  if (rotflag == 1){
+    transpose(matImage, matImage);  
+    flip(matImage, matImage,1); //transpose+flip(1)=CW
+  } else if (rotflag == 2) {
+    transpose(matImage, matImage);  
+    flip(matImage, matImage,0); //transpose+flip(0)=CCW     
+  } else if (rotflag ==3){
+    flip(matImage, matImage,-1);    //flip(-1)=180          
+  } else if (rotflag != 0){ //if not 0,1,2,3:
+    cout  << "Unknown rotation flag(" << rotflag << ")" << endl;
   }
 }
 

@@ -231,6 +231,10 @@ private:
   uniform_real_distribution<double> rand_noise_;
   normal_distribution<double> rand_noise2_;
   default_random_engine eng_;
+
+  //1=CW, 2=CCW, 3=180
+  void rotImg(cv::Mat &matImage, int rotflag);
+  int rot_flag_;
 };
 
 /* ============================== definition of inline function

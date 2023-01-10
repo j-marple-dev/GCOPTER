@@ -16,6 +16,8 @@
   <arg name="depth_topic"       value="/royale_camera_driver/depth_image"/>
 
   <node pkg="plan_env" type="grid_map" name="grid_map_node" output="screen">
+    <!-- 1=CW, 2=CCW, 3=180 -->
+    <param name="/grid_map/rotation_flag"         value="0"/>
     <!-- grid map topic -->
     <remap from="/grid_map/odom"  to="$(arg odometry_topic)"/>
     <remap from="/grid_map/cloud" to="$(arg cloud_topic)"/>
