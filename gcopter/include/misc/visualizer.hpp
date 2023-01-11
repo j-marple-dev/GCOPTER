@@ -34,8 +34,8 @@ private:
     ros::Publisher meshPub;
     ros::Publisher edgePub;
     ros::Publisher spherePub;
-    ros::Publisher pathPub;
-    nav_msgs::Path path_;
+    ros::Publisher pathPub, pathPub2;
+    nav_msgs::Path path_, path2_;
 
 public:
     ros::Publisher speedPub;
@@ -58,6 +58,7 @@ public:
         tiltPub = nh.advertise<std_msgs::Float64>("/visualizer/tilt_angle", 1000);
         bdrPub = nh.advertise<std_msgs::Float64>("/visualizer/body_rate", 1000);
         pathPub = nh.advertise<nav_msgs::Path>("/visualizer/path", 10);
+        pathPub2 = nh.advertise<nav_msgs::Path>("/visualizer/path_desired", 10);
     }
 
     // Visualize the trajectory and its front-end path
@@ -362,6 +363,34 @@ public:
         path_.poses.push_back(pose_stamped);
 
         pathPub.publish(path_);
+    }
+
+    inline void visualizePath2(const Eigen::Vector3d &new_pose, const int point_num)
+    {
+        if (path2_.header.seq >= path_.header.seq)
+            return;
+
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = ros::Time::now();
+        pose_stamped.header.frame_id = "map";
+        pose_stamped.pose.position.x = new_pose.x();
+        pose_stamped.pose.position.y = new_pose.y();
+        pose_stamped.pose.position.z = new_pose.z();
+        pose_stamped.pose.orientation.w = 1;
+
+        path2_.header.stamp = ros::Time::now();
+        path2_.header.seq += 1;
+        path2_.header.frame_id = "map";
+
+        if ((int)path2_.poses.size() > point_num)
+        {
+            int delete_size = point_num * 0.05;
+            std::vector<geometry_msgs::PoseStamped> new_vector(path2_.poses.begin() + delete_size + 1, path2_.poses.end());
+            path2_.poses = new_vector;
+        }
+        path2_.poses.push_back(pose_stamped);
+
+        pathPub2.publish(path2_);
     }
 
     inline void deletePlans()

@@ -156,7 +156,7 @@ public:
         rcinSub = nh.subscribe("/mavros/rc/in", 10, &GlobalPlanner::rcinCallback, this, ros::TransportHints().tcpNoDelay());
 
         mainTimer = nh.createTimer(ros::Duration(0.01), &GlobalPlanner::mainLoop , this);
-        visTimer = nh.createTimer(ros::Duration(0.05), &GlobalPlanner::visCallback, this);
+        visTimer = nh.createTimer(ros::Duration(0.1), &GlobalPlanner::visCallback, this);
         // collisionCheckTimer = nh.createTimer(ros::Duration(0.25), &GlobalPlanner::collisionCheckCallback, this);
         calcWPTimer = nh.createTimer(ros::Duration(0.5), &GlobalPlanner::calcWaypointCallback, this);
 
@@ -608,7 +608,7 @@ public:
             if (traj.getPieceNum() > 0)
             {
                 const double delta = ros::Time::now().toSec() - trajStamp;
-                if (delta > 0.0 && delta < traj.getTotalDuration())
+                if (delta >= 0.0 && delta < traj.getTotalDuration())
                 {
                     cmdPosition.x() = traj.getPos(delta).x();
                     cmdPosition.y() = traj.getPos(delta).y();
@@ -659,6 +659,7 @@ public:
 
         offboard_cmd_pub.publish(msg);
         visualizer.visualizeSphere(cmdPosition, 0.4);
+        visualizer.visualizePath2(cmdPosition, 200);
     }
 
     Eigen::Vector3i prevPosi;
