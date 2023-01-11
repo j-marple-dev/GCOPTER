@@ -198,13 +198,15 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
   // std::cout << "origin- " << mp_.map_origin_(0) << ", " << mp_.map_origin_(1) << ", " << mp_.map_origin_(2) << std::endl;
   // std::cout << "offset- " << move_offset(0) << ", " << move_offset(1) << ", " << move_offset(2) << " : " << offset << std::endl;
 
-  if (abs(offset) >= max_addr) {
+  if (abs(offset_id(0)) >= abs(mp_.map_voxel_num_(0)) ||
+      abs(offset_id(1)) >= abs(mp_.map_voxel_num_(1)) ||
+      abs(offset_id(2)) >= abs(mp_.map_voxel_num_(2))) {
     for (int addr = 0; addr < max_addr; addr++) {
       md_.occupancy_buffer_inflate_[addr] = 0;
       md_.occupancy_buffer_[addr] = occ_buffer_init_val;
     }
 
-  } if (offset > 0) {
+  } else if (offset > 0) {
     for (int addr = 0; addr < max_addr - offset; addr++) {
       md_.occupancy_buffer_inflate_[addr] = md_.occupancy_buffer_inflate_[addr + offset];
       md_.occupancy_buffer_[addr] = md_.occupancy_buffer_[addr + offset];
