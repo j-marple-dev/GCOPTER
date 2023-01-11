@@ -809,7 +809,12 @@ public:
             for (int i = 0; i < 4; i++)
                 rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
 
-            control_state = ControlState::Manual;
+            if (control_state != ControlState::Manual)
+            {
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
+                control_state = ControlState::Manual;
+            }
 
             if (traj.getPieceNum() > 0) traj.clear();
         }
@@ -830,7 +835,12 @@ public:
             }
             else
             {
-                control_state = ControlState::Manual;
+                if (control_state != ControlState::Manual)
+                {
+                    holdPosition = state.pos;
+                    holdYaw = state.yaw;
+                    control_state = ControlState::Manual;
+                }
                 if (traj.getPieceNum() > 0) traj.clear();
             }
         }
@@ -878,7 +888,12 @@ public:
         // }
         // else
         {
-            control_state = ControlState::Manual;
+            if (control_state != ControlState::Manual)
+            {
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
+                control_state = ControlState::Manual;
+            }
             if (traj.getPieceNum() > 0) traj.clear();
         }
     }
@@ -932,7 +947,12 @@ public:
             startGoal.emplace_back(waypoint);
             commandGoal = waypoint;
             plan();
-            control_state = ControlState::Assistance;
+            if (control_state != ControlState::Assistance)
+            {
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
+                control_state = ControlState::Assistance;
+            }
 
             visualizer.visualizeStartGoal(waypoint, 0.5, 1);
         }
