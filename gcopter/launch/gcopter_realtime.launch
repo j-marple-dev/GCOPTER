@@ -5,11 +5,6 @@
     args="-d $(find gcopter)/config/global_planning.rviz"> 
   </node>
 
-  <arg name="odometry_topic" value="/mavros/local_position/odom" />
-  <arg name="cloud_topic" value="/stereo/points2"/>
-  <arg name="camera_pose_topic" value="camera_pose_topic_none"/>
-  <arg name="depth_topic" value="depth_topic_none"/>
-
   <node pkg="gcopter" type="gcopter_realtime" name="gcopter_realtime_node" output="screen">
     <rosparam file="$(find gcopter)/config/gcopter_realtime.yaml" command="load" />
   </node>

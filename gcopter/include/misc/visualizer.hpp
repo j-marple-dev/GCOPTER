@@ -363,6 +363,45 @@ public:
 
         pathPub.publish(path_);
     }
+
+    inline void deletePlans()
+    {
+        // RVIZ support tris for visualization
+        visualization_msgs::Marker meshDeleter, edgeDeleter;
+
+        meshDeleter.id = 0;
+        meshDeleter.header.stamp = ros::Time::now();
+        meshDeleter.header.frame_id = "map";
+        meshDeleter.action = visualization_msgs::Marker::DELETE;
+        meshDeleter.ns = "mesh";
+
+        edgeDeleter = meshDeleter;
+        edgeDeleter.ns = "edge";
+
+        meshPub.publish(meshDeleter);
+        edgePub.publish(edgeDeleter);
+
+        visualization_msgs::Marker routeDeleter, wayPointsDeleter, trajDeleter;
+
+        routeDeleter.id = 0;
+        routeDeleter.header.stamp = ros::Time::now();
+        routeDeleter.header.frame_id = "map";
+        routeDeleter.action = visualization_msgs::Marker::DELETE;
+        routeDeleter.ns = "route";
+
+        wayPointsDeleter = routeDeleter;
+        wayPointsDeleter.id = -wayPointsDeleter.id - 1;
+        wayPointsDeleter.ns = "waypoints";
+
+        trajDeleter = routeDeleter;
+        trajDeleter.header.frame_id = "map";
+        trajDeleter.id = 0;
+        trajDeleter.ns = "trajectory";
+
+        routePub.publish(routeDeleter);
+        wayPointsPub.publish(wayPointsDeleter);
+        trajectoryPub.publish(trajDeleter);
+    }
 };
 
 #endif

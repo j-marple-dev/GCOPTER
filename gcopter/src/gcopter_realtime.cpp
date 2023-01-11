@@ -26,6 +26,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 #include <mavros_msgs/PositionTarget.h>
+#include <mavros_msgs/RCIn.h>
 
 #include "misc/vehicle_state.hpp"
 #include "path_searching/dyn_a_star.h"
@@ -55,6 +56,7 @@ struct Config
     int integralIntervs;
     double relCostTol;
     double timeFoward = 0;
+    double cpDist = 0;
 
     Config(const ros::NodeHandle &nh_priv)
     {
@@ -80,6 +82,7 @@ struct Config
         nh_priv.getParam("SmoothingEps", smoothingEps);
         nh_priv.getParam("IntegralIntervs", integralIntervs);
         nh_priv.getParam("RelCostTol", relCostTol);
+        nh_priv.getParam("CollisionPreventDist", cpDist);
     }
 };
 
@@ -106,14 +109,16 @@ private:
     VehicleState state;
     ros::Publisher map_pub, offboard_cmd_pub;
 
-    Eigen::Vector3d cmdPosition;
-    double cmdYaw;
+    Eigen::Vector3d cmdPosition, holdPosition;
+    double cmdYaw, holdYaw;
+    bool cmdInitialized = false;
+    double holdSmoothingTime = -1;
     
     AStar::Ptr a_star_;
 
-    ros::Subscriber rcdemoSub;
+    ros::Subscriber rcdemoSub, rcinSub;
     double rc_input[4] = {0}; // normalized values;
-    ros::Time last_rcdemo_time;
+    ros::Time last_rc_time;
     ros::Timer calcWPTimer;
     enum ControlState {
         Hover,
@@ -148,6 +153,7 @@ public:
                                  ros::TransportHints().tcpNoDelay());
 
         rcdemoSub = nh.subscribe("/rc_demo", 10, &GlobalPlanner::rcdemoCallback, this, ros::TransportHints().tcpNoDelay());
+        rcinSub = nh.subscribe("/mavros/rc/in", 10, &GlobalPlanner::rcinCallback, this, ros::TransportHints().tcpNoDelay());
 
         mainTimer = nh.createTimer(ros::Duration(0.01), &GlobalPlanner::mainLoop , this);
         visTimer = nh.createTimer(ros::Duration(0.05), &GlobalPlanner::visCallback, this);
@@ -308,6 +314,7 @@ public:
                 std::cout << "[compute time] plan : " << (t[1] - t[0]).toSec() << " s" << std::endl;
                 startGoal.clear();
                 traj.clear();
+                visualizer.deletePlans();
                 return;
             }
 
@@ -469,11 +476,9 @@ public:
 
         pcl::PointCloud<pcl::PointXYZ> cloud;
 
-        voxelMap.iterateVoxelPosVal([&](Eigen::Vector3d pos, uint8_t val) {
-            if (val != 0) {
-                cloud.points.emplace_back(pcl::PointXYZ(pos(0), pos(1), pos(2)));
-            }
-        });
+        std::vector<Eigen::Vector3d> pc;
+        voxelMap.getSurf(pc);
+        for (auto p : pc) cloud.points.emplace_back(p(0), p(1), p(2));
 
         cloud.width = cloud.points.size();
         cloud.height = 1;
@@ -515,6 +520,12 @@ public:
     inline void offboardCommand()
     {
         if (!state.initialized) return;
+        if (!cmdInitialized)
+        {
+            holdPosition = state.pos;
+            holdYaw = state.yaw;
+            cmdInitialized = true;
+        }
 
         mavros_msgs::PositionTarget msg;
         msg.header.stamp = ros::Time::now();
@@ -529,31 +540,65 @@ public:
 
         if (control_state == ControlState::Hover)
         {
-            if ((cmdPosition - state.pos).norm() > 0.5)
-                cmdPosition = state.pos;
+            if ((holdPosition - state.pos).norm() > 0.5)
+                holdPosition = state.pos;
             if (cos(cmdYaw - state.yaw) < 0.8)
-                cmdYaw = state.yaw;
+                holdYaw = state.yaw;
+
+            cmdPosition = holdPosition;
+            cmdYaw = holdYaw;
         }
         else if (control_state == ControlState::Manual)
         {
-            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
+            if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
                 control_state = ControlState::Hover;
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
                 return;
             }
 
-            cmdPosition = state.pos;
-            cmdYaw = state.yaw;
-
             Eigen::Vector3d control(rc_input[0] * 2.0, rc_input[1] * 2.0, rc_input[2]);
-            cmdPosition += Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
-            cmdYaw += rc_input[3] * 0.5;
+            control = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
+
+            if (rc_input[3] != 0) holdYaw = state.yaw;
+
+            if ((control.x() == 0 && control.y() == 0))
+            {
+                if (ros::Time::now().toSec() - holdSmoothingTime < 1.0)
+                {
+                    holdPosition = state.pos;
+                }
+
+                if (control.z() != 0)
+                    holdPosition.z() = state.pos.z();
+
+                cmdPosition.x() = holdPosition.x();
+                cmdPosition.y() = holdPosition.y();
+                cmdPosition.z() = state.pos.z() + control.z();
+                cmdYaw = state.yaw + rc_input[3] * 0.5;
+            }
+            else if (!collisionCheck1D(control))
+            {
+                holdPosition = state.pos;
+                holdSmoothingTime = ros::Time::now().toSec();
+
+                cmdPosition = state.pos + control;
+                cmdYaw = state.yaw + rc_input[3] * 0.5;
+            }
+            else
+            {
+                cmdPosition = holdPosition;
+                cmdYaw = holdYaw;
+            }
         }
         else if (control_state == ControlState::Assistance)
         {
-            if ((ros::Time::now() - last_rcdemo_time).toSec() > 1.0)
+            if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
                 control_state = ControlState::Hover;
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
                 return;
             }
 
@@ -602,6 +647,8 @@ public:
             else
             {
                 control_state = ControlState::Hover;
+                holdPosition = state.pos;
+                holdYaw = state.yaw;
             }
         }
 
@@ -612,6 +659,32 @@ public:
 
         offboard_cmd_pub.publish(msg);
         visualizer.visualizeSphere(cmdPosition, 0.4);
+    }
+
+    Eigen::Vector3i prevPosi;
+    Eigen::Vector3i prevCmdi;
+    bool prevRetv = true;
+
+    inline bool collisionCheck1D(const Eigen::Vector3d &cmd)
+    {
+        Eigen::Vector3i posi = ((state.pos) / voxelMap.getScale()).cast<int>();
+        Eigen::Vector3i cmdi = ((cmd) / voxelMap.getScale()).cast<int>();
+
+        if (prevPosi == posi && prevCmdi == cmdi)
+        {
+            return prevRetv;
+        }
+
+        prevPosi = posi;
+        prevCmdi = cmdi;
+        
+        const double check_length = std::max(config.cpDist, cmd.norm());
+        Eigen::Vector3d end = state.pos + cmd.normalized() * check_length;
+
+        bool retVal = (end != ray_cast(state.pos, end, 0.05)) ? true : false;
+        prevRetv = retVal;
+
+        return retVal;
     }
 
     inline void collisionCheckCallback(const ros::TimerEvent & /*event*/)
@@ -730,7 +803,11 @@ public:
             rc_input[1] = std::stod(splited[1]);
             rc_input[2] = std::stod(splited[4]);
             rc_input[3] = std::stod(splited[3]);
-            last_rcdemo_time = ros::Time::now();
+            last_rc_time = ros::Time::now();
+
+            for (int i = 0; i < 4; i++)
+                rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
+
             control_state = ControlState::Manual;
 
             if (traj.getPieceNum() > 0) traj.clear();
@@ -741,7 +818,10 @@ public:
             rc_input[1] = std::stod(splited[1]);
             rc_input[2] = std::stod(splited[4]);
             rc_input[3] = std::stod(splited[3]);
-            last_rcdemo_time = ros::Time::now();
+            last_rc_time = ros::Time::now();
+
+            for (int i = 0; i < 4; i++)
+                rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
 
             if (rc_input[0] > 0)
             {
@@ -758,12 +838,47 @@ public:
             startGoal.clear();
             traj.clear();
             ROS_WARN("Path deleted!");
+            visualizer.deletePlans();
             control_state = ControlState::Hover;
+            holdPosition = state.pos;
+            holdYaw = state.yaw;
         }
         else if (splited.front() == "p")
         {
             setAstarBound();
             std::cout << "test" << std::endl;
+        }
+    }
+
+    void rcinCallback(const mavros_msgs::RCIn& msg)
+    {
+        double chan_normalized[4];
+        double padding = 100;
+
+        for (int i = 0; i < 4; i++)
+        {
+            chan_normalized[i] = (double)(msg.channels[i] - 1500) / (1000.0 - padding);
+            chan_normalized[i] = std::min(1.0, std::max(-1.0, chan_normalized[i]));
+        }
+
+        rc_input[0] =  chan_normalized[1]; // pitch -> x
+        rc_input[1] = -chan_normalized[0]; // roll -> y
+        rc_input[2] =  chan_normalized[3]; // throttle -> z
+        rc_input[3] = -chan_normalized[2]; // yaw -> yawrate 
+
+        for (int i = 0; i < 4; i++)
+            rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
+
+        last_rc_time = ros::Time::now();
+
+        // if (rc_input[0] > 0)
+        // {
+        //     control_state = ControlState::Assistance;
+        // }
+        // else
+        {
+            control_state = ControlState::Manual;
+            if (traj.getPieceNum() > 0) traj.clear();
         }
     }
 
@@ -799,7 +914,7 @@ public:
 
     void calcWaypointCallback(const ros::TimerEvent & /*event*/)
     {
-        if (control_state != ControlState::Assistance || (ros::Time::now() - last_rcdemo_time).toSec() > 3.0)
+        if (control_state != ControlState::Assistance || (ros::Time::now() - last_rc_time).toSec() > 3.0)
         {
             return;
         }
@@ -825,8 +940,32 @@ public:
             startGoal.clear();
             traj.clear();
             ROS_WARN("Path deleted!");
+            visualizer.deletePlans();
         }
     }
+
+    inline Eigen::Vector3d ray_cast(const Eigen::Vector3d &start, const Eigen::Vector3d &end, const double dt) {
+        const double eps = 1.0e-6;
+        Eigen::Vector3d sub = (end - start);
+        const double length = sub.norm();
+        const Eigen::Vector3d dir = sub.normalized();
+        Eigen::Vector3i pos_p = voxelMap.posD2I(start);
+
+        for (double t = dt; t < length + eps; t += dt)
+        {
+            Eigen::Vector3i pos_n = voxelMap.posD2I(start + dir * t);
+            if (pos_p != pos_n)
+            {
+                if (voxelMap.query(pos_n) != 0)
+                {
+                    return voxelMap.posI2D(pos_n);
+                }
+                pos_p = pos_n;
+            }
+        }
+
+        return end;
+    };
 
     Eigen::Vector3d calcWaypoint()
     {
@@ -842,29 +981,6 @@ public:
         {
             cruiseVel = control.norm() * config.maxVelMag;
         }
-
-        auto ray_cast = [&](const Eigen::Vector3d &start, const Eigen::Vector3d &end, const double dt) {
-            const double eps = 1.0e-6;
-            Eigen::Vector3d sub = (end - start);
-            const double length = sub.norm();
-            const Eigen::Vector3d dir = sub.normalized();
-            Eigen::Vector3i pos_p = voxelMap.posD2I(start);
-
-            for (double t = dt; t < length + eps; t += dt)
-            {
-                Eigen::Vector3i pos_n = voxelMap.posD2I(start + dir * t);
-                if (pos_p != pos_n)
-                {
-                    if (voxelMap.query(pos_n) != 0)
-                    {
-                        return voxelMap.posI2D(pos_n);
-                    }
-                    pos_p = pos_n;
-                }
-            }
-
-            return end;
-        };
 
         Eigen::Vector3d test_control = control.normalized() * control_mag_max;
         Eigen::Vector3d test_wp = state.pos + Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * test_control;

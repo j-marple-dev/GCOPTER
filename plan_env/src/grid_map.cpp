@@ -62,6 +62,8 @@ void GridMap::initMap(ros::NodeHandle &nh)
   node_.param("grid_map/frame_id", mp_.frame_id_, string("world"));
   node_.param("grid_map/local_map_margin", mp_.local_map_margin_, 1);
   node_.param("grid_map/ground_height", mp_.ground_height_, 1.0);
+  
+  node_.param("grid_map/rotation_flag", rot_flag_, 0);
 
   mp_.resolution_inv_ = 1 / mp_.resolution_;
   mp_.map_origin_ = Eigen::Vector3d(-x_size / 2.0, -y_size / 2.0, -z_size / 2.0);
@@ -196,13 +198,15 @@ void GridMap::change_origin(Eigen::Vector3d move_offset)
   // std::cout << "origin- " << mp_.map_origin_(0) << ", " << mp_.map_origin_(1) << ", " << mp_.map_origin_(2) << std::endl;
   // std::cout << "offset- " << move_offset(0) << ", " << move_offset(1) << ", " << move_offset(2) << " : " << offset << std::endl;
 
-  if (abs(offset) >= max_addr) {
+  if (abs(offset_id(0)) >= abs(mp_.map_voxel_num_(0)) ||
+      abs(offset_id(1)) >= abs(mp_.map_voxel_num_(1)) ||
+      abs(offset_id(2)) >= abs(mp_.map_voxel_num_(2))) {
     for (int addr = 0; addr < max_addr; addr++) {
       md_.occupancy_buffer_inflate_[addr] = 0;
       md_.occupancy_buffer_[addr] = occ_buffer_init_val;
     }
 
-  } if (offset > 0) {
+  } else if (offset > 0) {
     for (int addr = 0; addr < max_addr - offset; addr++) {
       md_.occupancy_buffer_inflate_[addr] = md_.occupancy_buffer_inflate_[addr + offset];
       md_.occupancy_buffer_[addr] = md_.occupancy_buffer_[addr + offset];
@@ -300,6 +304,8 @@ void GridMap::projectDepthImage()
 {
   if (!md_.has_first_depth_)
     return;
+
+  rotImg(md_.depth_image_, rot_flag_);
 
   // md_.proj_points_.clear();
   md_.proj_points_cnt = 0;
@@ -788,7 +794,7 @@ void GridMap::odomCallback(const nav_msgs::OdometryConstPtr &odom)
 
   md_.has_odom_ = true;
 
-  Eigen::Vector3d change_unit(10, 10, 2.5);
+  Eigen::Vector3d change_unit(1, 1, 1);
   Eigen::Vector3d test_orig = mp_.map_origin_ +  mp_.map_size_ / 2.0;
   Eigen::Vector3d test_new = md_.camera_pos_;
   Eigen::Vector3i test_res((int)round((test_new.x() - test_orig.x()) / change_unit.x()),
@@ -844,6 +850,7 @@ void GridMap::cloudCallback(const sensor_msgs::PointCloud2ConstPtr &img)
     {
       pt = latest_cloud.points[i];
       if (isnan(pt.x) || isnan(pt.y) || isnan(pt.z)) continue;
+      if (sqrt(pt.x*pt.x + pt.y*pt.y + pt.z*pt.z) < mp_.depth_filter_mindist_) continue;
       p3d(0) = pt.z, p3d(1) = -pt.x, p3d(2) = -pt.y;
       p3d = camera_r * p3d + md_.camera_pos_;
       md_.proj_points_.push_back(p3d);
@@ -1013,6 +1020,40 @@ void GridMap::depthOdomCallback(const sensor_msgs::ImageConstPtr &img,
 
   if (!md_.has_first_depth_)
     md_.has_first_depth_ = true;
+
+  // change origin
+  Eigen::Vector3d change_unit(1, 1, 1);
+  Eigen::Vector3d test_orig = mp_.map_origin_ +  mp_.map_size_ / 2.0;
+  Eigen::Vector3d test_new = md_.camera_pos_;
+  Eigen::Vector3i test_res((int)round((test_new.x() - test_orig.x()) / change_unit.x()),
+                           (int)round((test_new.y() - test_orig.y()) / change_unit.y()),
+                           (int)round((test_new.z() - test_orig.z()) / change_unit.z()));
+
+  if (abs(test_new.x() - test_orig.x()) > change_unit.x() * 2.0 / 3.0) {
+    // std::cout << "change_origin - X direction" << std::endl;
+    change_origin({(double)test_res.x() * change_unit.x(), 0, 0});
+  } else if (abs(test_new.y() - test_orig.y()) > change_unit.y() * 2.0 / 3.0) {
+    // std::cout << "change_origin - Y direction" << std::endl;
+    change_origin({0, (double)test_res.y() * change_unit.y(), 0});
+  } else if (abs(test_new.z() - test_orig.z()) > change_unit.z() * 2.0 / 3.0) {
+    // std::cout << "change_origin - Z direction" << std::endl;
+    change_origin({0, 0, (double)test_res.z() * change_unit.z()});
+  }
+}
+
+void GridMap::rotImg(cv::Mat &matImage, int rotflag)
+{
+  if (rotflag == 1){
+    transpose(matImage, matImage);  
+    flip(matImage, matImage,1); //transpose+flip(1)=CW
+  } else if (rotflag == 2) {
+    transpose(matImage, matImage);  
+    flip(matImage, matImage,0); //transpose+flip(0)=CCW     
+  } else if (rotflag ==3){
+    flip(matImage, matImage,-1);    //flip(-1)=180          
+  } else if (rotflag != 0){ //if not 0,1,2,3:
+    cout  << "Unknown rotation flag(" << rotflag << ")" << endl;
+  }
 }
 
 // GridMap
