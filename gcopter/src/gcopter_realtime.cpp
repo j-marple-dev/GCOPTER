@@ -164,7 +164,7 @@ public:
         offboard_cmd_pub = nh.advertise<mavros_msgs::PositionTarget>("/mavros/setpoint_raw/local", 1);
         
         a_star_.reset(new AStar);
-        a_star_->initGridMap(voxel_map::VoxelMap::Ptr(&voxelMap), Eigen::Vector3i(256, 256, 256));
+        a_star_->initGridMap(voxel_map::VoxelMap::Ptr(&voxelMap), Eigen::Vector3i(256, 256, 100));
 
         control_state = ControlState::Hover;
     }
@@ -903,8 +903,8 @@ public:
         double hFov = 56.0 / 2.0 * 0.01745329;
         double vFov = 40.0 / 2.0 * 0.01745329;
 
-        Eigen::Vector3d foward = Eigen::Vector3d(13.0, 0, 0);
-        Eigen::Vector3d back = Eigen::Vector3d(-0.5, 0, 0);
+        Eigen::Vector3d foward = Eigen::Vector3d(12.5, 0, 0);
+        Eigen::Vector3d back = Eigen::Vector3d(-1.0, 0, 0);
         Eigen::Vector3d focal = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * back + state.pos;
         Eigen::Vector3d max_range_center = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * foward + focal;
 
