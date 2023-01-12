@@ -317,18 +317,13 @@ class Controller:
 
         self.draw(screen)
 
-        text_control_state = None
+        text_control_state = ""
 
         # Publish
         if self.stick_2.updated or self.waypoint_mode_enabled:
             roll = float(-self.stick_2.pos_x) / float(self.stick_2.radius)
             pitch = float(-self.stick_2.pos_y) / float(self.stick_2.radius)
-            if roll and pitch:
-                text_control_state = "Y : {:0.0f}%, X : {:0.0f}%".format(roll*100, pitch*100)
-            elif roll:
-                text_control_state = "Y : {:0.0f}%".format(roll*100)
-            elif pitch:
-                text_control_state = "X : {:0.0f}%".format(pitch*100)
+
         else: # skip motion
             roll = 0
             pitch = 0
@@ -336,15 +331,30 @@ class Controller:
         if self.stick_1.updated or self.waypoint_mode_enabled:
             yaw = float(-self.stick_1.pos_x) / float(self.stick_1.radius)
             throttle = float(-self.stick_1.pos_y) / float(self.stick_1.radius)
-            if yaw and throttle:
-                text_control_state = "Z : {:0.0f}%, yaw : {:0.0f}%".format(throttle*100, yaw*100)
-            elif yaw:
-                text_control_state = "yaw : {:0.0f}%".format(yaw*100)
-            elif throttle:
-                text_control_state = "Z : {:0.0f}%".format(throttle*100)
+
         else: # skip motion
             yaw = 0
             throttle = 0
+
+        if not yaw:
+            if key_event[pygame.K_a]:
+                yaw = 0.35
+            elif key_event[pygame.K_d]:
+                yaw = -0.35
+        if not throttle:
+            if key_event[pygame.K_w]:
+                throttle = 0.35
+            elif key_event[pygame.K_s]:
+                throttle = -0.35
+
+        if pitch:
+            text_control_state += "X : {:0.0f}%  ".format(pitch*100)
+        if roll:
+            text_control_state += "Y : {:0.0f}%  ".format(roll*100)
+        if throttle:
+            text_control_state += "Z : {:0.0f}%  ".format(throttle*100)
+        if yaw:
+            text_control_state += "yaw : {:0.0f}%  ".format(yaw*100)
 
         if text_control_state:
             screen.blit(self.my_font.render(text_control_state, True, COLOR_BLUE), (5, 5))

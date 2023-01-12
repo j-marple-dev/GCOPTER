@@ -292,10 +292,16 @@ namespace voxel_map
         inline void changeOrigin(Eigen::Vector3i move_offset)
         {
             int offset = move_offset.dot(step);
+            int max_addr = mapSize(0) * mapSize(1) * mapSize(2);
 
-            if (offset > 0)
+            if (abs(move_offset(0)) >= mapSize(0) || abs(move_offset(1)) >= mapSize(1) || abs(move_offset(2)) >= mapSize(2))
             {
-                int max_addr = mapSize(0) * mapSize(1) * mapSize(2);
+                for (int addr = 0; addr < max_addr; addr++) {
+                    voxels[addr] = 0;
+                }
+            }
+            else if (offset > 0)
+            {
                 for (int addr = 0; addr < max_addr - offset; addr++)
                 {
                     voxels[addr] = voxels[addr + offset];
@@ -336,7 +342,6 @@ namespace voxel_map
             }
             else if (offset < 0)
             {
-                int max_addr = mapSize(0) * mapSize(1) * mapSize(2);
                 for (int addr = max_addr - 1; addr >= -offset; addr--)
                 {
                     voxels[addr] = voxels[addr + offset];

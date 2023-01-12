@@ -561,6 +561,7 @@ public:
             Eigen::Vector3d control(rc_input[0] * 2.0, rc_input[1] * 2.0, rc_input[2]);
             control = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
 
+            if (control.z() != 0) holdPosition.z() = state.pos.z();
             if (rc_input[3] != 0) holdYaw = state.yaw;
 
             if ((control.x() == 0 && control.y() == 0))
@@ -569,9 +570,6 @@ public:
                 {
                     holdPosition = state.pos;
                 }
-
-                if (control.z() != 0)
-                    holdPosition.z() = state.pos.z();
 
                 cmdPosition.x() = holdPosition.x();
                 cmdPosition.y() = holdPosition.y();
@@ -588,8 +586,10 @@ public:
             }
             else
             {
-                cmdPosition = holdPosition;
-                cmdYaw = holdYaw;
+                cmdPosition.x() = holdPosition.x();
+                cmdPosition.y() = holdPosition.y();
+                cmdPosition.z() = holdPosition.z() + control.z();
+                cmdYaw = state.yaw + rc_input[3] * 0.5;
             }
         }
         else if (control_state == ControlState::Assistance)
