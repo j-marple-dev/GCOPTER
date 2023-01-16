@@ -498,7 +498,7 @@ public:
 
     inline void movingVoxel()
     {
-        Eigen::Vector3d change_unit(10, 10, 2.5);
+        Eigen::Vector3d change_unit(10, 10, 1.5);
         Eigen::Vector3d test_orig = voxelMap.posI2D(voxelMap.getSize() / 2);
         Eigen::Vector3d test_new = state.pos;
         Eigen::Vector3i test_res((int)round((test_new.x() - test_orig.x()) / change_unit.x()),
@@ -658,7 +658,7 @@ public:
         msg.yaw = cmdYaw;
 
         offboard_cmd_pub.publish(msg);
-        visualizer.visualizeSphere(cmdPosition, 0.4);
+        visualizer.visualizeSphere(cmdPosition, 0.2);
         visualizer.visualizePath2(cmdPosition, 200);
     }
 
@@ -908,7 +908,7 @@ public:
         Eigen::Vector3d focal = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * back + state.pos;
         Eigen::Vector3d max_range_center = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * foward + focal;
 
-        Eigen::MatrixX4d Poly(6, 4);
+        Eigen::MatrixX4d Poly(8, 4);
         Poly.leftCols<3>().row(0) <<  cos(state.yaw), sin(state.yaw), 0; // front
         Poly.leftCols<3>().row(1) << -cos(state.yaw),-sin(state.yaw), 0; // back
         Poly.leftCols<3>().row(2) << -sin(hFov + state.yaw), cos(hFov + state.yaw), 0; // left
@@ -917,8 +917,11 @@ public:
         Poly.leftCols<3>().row(5) << -sin(vFov)*cos(state.yaw),-sin(vFov)*sin(state.yaw),-cos(vFov); // bottom
 
         Poly.rightCols<1>().row(0) << -Poly.leftCols<3>().row(0).dot(max_range_center);
-        for (int i = 1; i < Poly.rows(); i++)
+        for (int i = 1; i < 6; i++)
             Poly.rightCols<1>().row(i) << -Poly.leftCols<3>().row(i).dot(focal);
+
+        Poly.row(6) << 0, 0, -1, voxelMap.getOrigin().z(); // floor
+        Poly.row(7) << 0, 0, 1, -voxelMap.getCorner().z(); // ceil
 
         a_star_->setSearchBound(Poly);
 
@@ -938,9 +941,25 @@ public:
         Eigen::Vector3d waypoint = calcWaypoint();
         if ((waypoint - state.pos).norm() > voxelMap.getScale())
         {
-            if (voxelMap.query(waypoint) != 0) return;
             setAstarBound();
-            if (!a_star_->checkSearchBound(waypoint)) return;
+            if (!a_star_->checkSearchBound(waypoint))
+            {
+                Eigen::Vector3d p1 = (waypoint - state.pos).norm() * (Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ())
+                                                             * Eigen::Vector3d::UnitX()) + state.pos;
+                Eigen::Vector3d p2 = waypoint;
+                Eigen::Vector4d plane = a_star_->getSearchBound(a_star_->getOutboundIdx(p2));
+                double u = (plane(0)*p1(0) + plane(1)*p1(1) + plane(2)*p1(2) + plane(3)) /
+                           (plane(0)*(p1(0)-p2(0)) + plane(1)*(p1(1)-p2(1)) + plane(2)*(p1(2)-p2(2)));
+                Eigen::Vector3d p3 = p1 + (u * 0.95) * (p2 - p1);
+                waypoint = p3;
+            }
+            else if (voxelMap.query(waypoint) != 0)
+            {
+                startGoal.clear();
+                traj.clear();
+                visualizer.deletePlans();
+                return;
+            }
 
             startGoal.clear();
             startGoal.emplace_back(state.pos);

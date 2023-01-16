@@ -95,6 +95,9 @@ public:
 	inline void setSearchBound(const Eigen::MatrixX4d &Poly);
 	inline void disableSearchBound() { use_search_bound_ = false; };
 	inline bool checkSearchBound(const Eigen::Vector3d &pos);
+	inline int getOutboundIdx(const Eigen::Vector3d &pos);
+	inline Eigen::MatrixX4d getSearchBound() { return PolyBound_; };
+	inline Eigen::Vector4d getSearchBound(const int idx) { return PolyBound_.row(idx); };
 };
 
 inline double AStar::getHeu(GridNodePtr node1, GridNodePtr node2)
@@ -137,6 +140,19 @@ inline bool AStar::checkSearchBound(const Eigen::Vector3d &pos)
 	}
 
 	return true;
+}
+
+inline int AStar::getOutboundIdx(const Eigen::Vector3d &pos)
+{
+	if (!use_search_bound_) return -2;
+
+	for (int i = 0; i < PolyBound_.rows(); i++)
+	{
+		double testVal = PolyBound_.leftCols<3>().row(i).dot(pos) + PolyBound_.row(i)(3);
+		if (testVal > 0) return i;
+	}
+
+	return -1;
 }
 
 #endif
