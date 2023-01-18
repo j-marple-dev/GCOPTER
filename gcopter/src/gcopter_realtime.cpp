@@ -1123,10 +1123,7 @@ public:
         
         if (new_state == ControlState::Manual && voxelMap.query(state.pos))
         {
-            control_state = ControlState::Failsafe_Manual;
-            holdPosition = state.pos;
-            holdYaw = state.yaw;
-            change_state_time = ros::Time::now().toSec();
+            changeState(ControlState::Failsafe_Manual);
             return true;
         }
         else
