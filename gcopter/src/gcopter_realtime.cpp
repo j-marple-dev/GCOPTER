@@ -121,11 +121,16 @@ private:
     ros::Time last_rc_time;
     ros::Timer calcWPTimer;
     enum ControlState {
+        Idle,
         Hover,
         Manual,
         Assistance,
-        RVizInput
+        RVizInput,
+        Failsafe_Manual,
+        Takeoff,
+        Land
     } control_state;
+    double change_state_time = -1;
     double cruiseVel;
 
 public:
@@ -450,7 +455,7 @@ public:
                 startGoal.emplace_back(goal);
 
                 plan();
-                control_state = ControlState::RVizInput;
+                changeState(ControlState::RVizInput);
             }
             else
             {
@@ -538,7 +543,9 @@ public:
         msg.type_mask |= msg.FORCE;
         msg.type_mask |= msg.IGNORE_YAW_RATE;
 
-        if (control_state == ControlState::Hover)
+        switch (control_state)
+        {
+        case ControlState::Hover:
         {
             if ((holdPosition - state.pos).norm() > 0.5)
                 holdPosition = state.pos;
@@ -547,18 +554,24 @@ public:
 
             cmdPosition = holdPosition;
             cmdYaw = holdYaw;
+            break;
         }
-        else if (control_state == ControlState::Manual)
+        
+        case ControlState::Manual:
+        case ControlState::Failsafe_Manual:
         {
             if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
-                control_state = ControlState::Hover;
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
+                changeState(ControlState::Hover);
                 return;
             }
 
             Eigen::Vector3d control(rc_input[0] * 2.0, rc_input[1] * 2.0, rc_input[2]);
+            if (control_state == ControlState::Failsafe_Manual)
+            {
+                control.x() = 0.5 * std::min(0.0, control.x());
+                control.y() = 0.5 * control.y();
+            }
             control = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
 
             if (control.z() != 0) holdPosition.z() = state.pos.z();
@@ -573,12 +586,13 @@ public:
 
                 cmdPosition.x() = holdPosition.x();
                 cmdPosition.y() = holdPosition.y();
-                cmdPosition.z() = state.pos.z() + control.z();
+                cmdPosition.z() = holdPosition.z() + control.z();
                 cmdYaw = state.yaw + rc_input[3] * 0.5;
             }
-            else if (!collisionCheck1D(control))
+            else if (!collisionCheck1D(control) || control_state == ControlState::Failsafe_Manual)
             {
-                holdPosition = state.pos;
+                holdPosition.x() = state.pos.x();
+                holdPosition.y() = state.pos.y();
                 holdSmoothingTime = ros::Time::now().toSec();
 
                 cmdPosition = state.pos + control;
@@ -591,14 +605,20 @@ public:
                 cmdPosition.z() = holdPosition.z() + control.z();
                 cmdYaw = state.yaw + rc_input[3] * 0.5;
             }
+
+            if (control_state == ControlState::Manual && voxelMap.query(state.pos))
+            {
+                changeState(ControlState::Failsafe_Manual);
+                return;
+            }
+            break;
         }
-        else if (control_state == ControlState::Assistance)
+
+        case ControlState::Assistance:
         {
             if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
             {
-                control_state = ControlState::Hover;
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
+                changeState(ControlState::Hover);
                 return;
             }
 
@@ -622,8 +642,10 @@ public:
                 cmdPosition.z() += rc_input[2] * 1.0;
                 cmdYaw += rc_input[3] * 0.5;
             }
+            break;
         }
-        else if (control_state == ControlState::RVizInput)
+
+        case ControlState::RVizInput:
         {
             if (traj.getPieceNum() > 0)
             {
@@ -646,10 +668,51 @@ public:
             }
             else
             {
-                control_state = ControlState::Hover;
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
+                changeState(ControlState::Hover);
             }
+            break;
+        }
+
+        case ControlState::Takeoff:
+        {
+            double takeoff_height = holdPosition.z() + 1.2;
+            if (state.pos.z() > takeoff_height)
+            {
+                changeState(ControlState::Hover, true);
+                return;
+            }
+            cmdPosition.x() = holdPosition.x();
+            cmdPosition.y() = holdPosition.y();
+            cmdPosition.z() = state.pos.z() + std::max(0.1, std::min(1.5, takeoff_height - state.pos.z()));
+            cmdYaw = holdYaw;
+            break;
+        }
+
+        case ControlState::Land:
+        {
+            double land_t = ros::Time::now().toSec() - change_state_time;
+            if (change_state_time > 0 && land_t > 1.5 && abs(state.vel.z()) < 0.05)
+            {
+                if (!state.setMode("AUTO.LAND"))
+                    ROS_WARN("Land fail!");
+                changeState(ControlState::Idle, true);
+                return;
+            }
+            cmdPosition.x() = holdPosition.x();
+            cmdPosition.y() = holdPosition.y();
+            cmdPosition.z() = state.pos.z() - 0.3;
+            cmdYaw = holdYaw;
+            break;
+        }
+
+        default:
+        {
+            holdPosition = state.pos;
+            holdYaw = state.yaw;
+            cmdPosition = state.pos;
+            cmdYaw = state.yaw;
+            break;
+        }
         }
 
         msg.position.x = cmdPosition.x();
@@ -690,6 +753,7 @@ public:
 
     inline void collisionCheckCallback(const ros::TimerEvent & /*event*/)
     {
+        if (control_state != ControlState::Assistance && control_state != ControlState::RVizInput) return;
         if (startGoal.size() < 2) return;
         if (voxelMap.query(startGoal.front()) != 0) return;
         if (voxelMap.query(startGoal.back()) != 0)
@@ -809,11 +873,13 @@ public:
             for (int i = 0; i < 4; i++)
                 rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
 
-            if (control_state != ControlState::Manual)
+            if (state.mode != "OFFBOARD")
             {
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
-                control_state = ControlState::Manual;
+                changeState(ControlState::Idle);
+            }
+            else if (control_state != ControlState::Manual)
+            {
+                changeState(ControlState::Manual);
             }
 
             if (traj.getPieceNum() > 0) traj.clear();
@@ -831,15 +897,13 @@ public:
 
             if (rc_input[0] > 0)
             {
-                control_state = ControlState::Assistance;
+                changeState(ControlState::Assistance);
             }
             else
             {
                 if (control_state != ControlState::Manual)
                 {
-                    holdPosition = state.pos;
-                    holdYaw = state.yaw;
-                    control_state = ControlState::Manual;
+                    changeState(ControlState::Manual);
                 }
                 if (traj.getPieceNum() > 0) traj.clear();
             }
@@ -850,14 +914,29 @@ public:
             traj.clear();
             ROS_WARN("Path deleted!");
             visualizer.deletePlans();
-            control_state = ControlState::Hover;
-            holdPosition = state.pos;
-            holdYaw = state.yaw;
+            changeState(ControlState::Hover, true);
         }
         else if (splited.front() == "p")
         {
-            setAstarBound();
+            // setAstarBound();
             std::cout << "test" << std::endl;
+            if (state.connected)
+            {
+                if (!state.armed)
+                {
+                    if (state.mode != "OFFBOARD" && !state.setMode("OFFBOARD"))
+                        ROS_WARN("Set Offboard mode fail!");
+
+                    if (state.commandArm(true))
+                        changeState(ControlState::Takeoff);
+                    else
+                        ROS_WARN("Arming fail!");
+                }
+                else
+                {
+                    changeState(ControlState::Land, true);
+                }
+            }
         }
     }
 
@@ -884,16 +963,19 @@ public:
 
         // if (rc_input[0] > 0)
         // {
-        //     control_state = ControlState::Assistance;
+        //    changeState(ControlState::Assistance);
         // }
         // else
         {
-            if (control_state != ControlState::Manual)
+            if (state.mode != "OFFBOARD")
             {
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
-                control_state = ControlState::Manual;
+                changeState(ControlState::Idle);
             }
+            else if (control_state != ControlState::Manual)
+            {
+                changeState(ControlState::Manual);
+            }
+
             if (traj.getPieceNum() > 0) traj.clear();
         }
     }
@@ -968,9 +1050,7 @@ public:
             plan();
             if (control_state != ControlState::Assistance)
             {
-                holdPosition = state.pos;
-                holdYaw = state.yaw;
-                control_state = ControlState::Assistance;
+                changeState(ControlState::Assistance);
             }
 
             visualizer.visualizeStartGoal(waypoint, 0.5, 1);
@@ -1033,6 +1113,30 @@ public:
         Eigen::Vector3d waypoint = state.pos + Eigen::AngleAxisd(state.yaw + rc_input[3] * 0.7, Eigen::Vector3d::UnitZ()) * control;
 
         return waypoint;
+    }
+
+    bool changeState(ControlState new_state, bool force = false)
+    {
+        if (control_state == new_state) return false;
+        if (control_state == ControlState::Takeoff && !force) return false;
+        if (control_state == ControlState::Land && !force) return false;
+        
+        if (new_state == ControlState::Manual && voxelMap.query(state.pos))
+        {
+            control_state = ControlState::Failsafe_Manual;
+            holdPosition = state.pos;
+            holdYaw = state.yaw;
+            change_state_time = ros::Time::now().toSec();
+            return true;
+        }
+        else
+        {
+            control_state = new_state;
+            holdPosition = state.pos;
+            holdYaw = state.yaw;
+            change_state_time = ros::Time::now().toSec();
+            return true;
+        }
     }
 };
 
