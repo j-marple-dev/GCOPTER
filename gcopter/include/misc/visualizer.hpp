@@ -301,6 +301,34 @@ public:
         spherePub.publish(sphereMarkers);
     }
 
+    // Visualize all spheres with centers sphs and the same radius
+    inline void visualizeControl(const Eigen::Vector3d &center,
+                                 const double &radius)
+    {
+        visualization_msgs::Marker sphereMarkers;
+
+        sphereMarkers.id = 100;
+        sphereMarkers.type = visualization_msgs::Marker::SPHERE;
+        sphereMarkers.header.stamp = ros::Time::now();
+        sphereMarkers.header.frame_id = "map";
+        sphereMarkers.pose.orientation.w = 1.00;
+        sphereMarkers.action = visualization_msgs::Marker::ADD;
+        sphereMarkers.ns = "spheres";
+        sphereMarkers.color.r = 1.00;
+        sphereMarkers.color.g = 1.00;
+        sphereMarkers.color.b = 0.00;
+        sphereMarkers.color.a = 1.00;
+        sphereMarkers.scale.x = radius * 2.0;
+        sphereMarkers.scale.y = radius * 2.0;
+        sphereMarkers.scale.z = radius * 2.0;
+        sphereMarkers.pose.position.x = center(0);
+        sphereMarkers.pose.position.y = center(1);
+        sphereMarkers.pose.position.z = center(2);
+        sphereMarkers.lifetime = ros::Duration(1.0);
+
+        spherePub.publish(sphereMarkers);
+    }
+
     inline void visualizeStartGoal(const Eigen::Vector3d &center,
                                    const double &radius,
                                    const int sg)

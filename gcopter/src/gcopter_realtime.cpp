@@ -574,6 +574,8 @@ public:
             }
             control = Eigen::AngleAxisd(state.yaw, Eigen::Vector3d::UnitZ()) * control;
 
+            visualizer.visualizeControl(state.pos + control, 0.12);
+
             if (control.z() != 0) holdPosition.z() = state.pos.z();
             if (rc_input[3] != 0) holdYaw = state.yaw;
 
