@@ -951,10 +951,10 @@ public:
             chan_normalized[i] = std::min(1.0, std::max(-1.0, chan_normalized[i]));
         }
 
-        rc_input[0] =  chan_normalized[1]; // pitch -> x
+        rc_input[0] = -chan_normalized[1]; // pitch -> x
         rc_input[1] = -chan_normalized[0]; // roll -> y
-        rc_input[2] =  chan_normalized[3]; // throttle -> z
-        rc_input[3] = -chan_normalized[2]; // yaw -> yawrate 
+        rc_input[2] =  chan_normalized[2]; // throttle -> z
+        rc_input[3] = -chan_normalized[3]; // yaw -> yawrate 
 
         for (int i = 0; i < 4; i++)
             rc_input[i] = (std::abs(rc_input[i]) > 0.08) ? rc_input[i] : 0;
