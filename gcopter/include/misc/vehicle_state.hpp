@@ -9,13 +9,14 @@
 #include <mavros_msgs/State.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
+#include <mavros_msgs/Altitude.h>
 
 // VehicleState for the planner
 class VehicleState
 {
 private:
     ros::NodeHandle nh;
-    ros::Subscriber odomSub, stateSub;
+    ros::Subscriber odomSub, stateSub, altitudeSub;
     ros::ServiceClient armingClient, setmodeClient;
     double takeoff_land_speed = 0.5;
 
@@ -32,6 +33,7 @@ public:
     bool armed = false;
     bool manual_input = false;
     std::string mode = "NONE";
+    double dist_bottom = 0;
 
 public:
     VehicleState(ros::NodeHandle &nh_)
@@ -41,6 +43,8 @@ public:
         odomSub = nh.subscribe("/mavros/local_position/odom", 1, &VehicleState::odomCallback, this,
                                ros::TransportHints().tcpNoDelay());
         stateSub = nh.subscribe("/mavros/state", 1, &VehicleState::stateCallback, this,
+                                ros::TransportHints().tcpNoDelay());
+        altitudeSub = nh.subscribe("/mavros/altitude", 1, &VehicleState::altitudeCallback, this,
                                 ros::TransportHints().tcpNoDelay());
         armingClient = nh.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
         setmodeClient = nh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
@@ -112,6 +116,11 @@ public:
         armed = state.armed;
         manual_input = state.manual_input;
         mode = state.mode;
+    }
+
+    void altitudeCallback(const mavros_msgs::Altitude &altitude)
+    {
+        dist_bottom = altitude.bottom_clearance;
     }
 
     // true -> arming, false -> disarming

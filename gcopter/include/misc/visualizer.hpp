@@ -287,9 +287,7 @@ public:
         sphereMarkers.scale.x = radius * 2.0;
         sphereMarkers.scale.y = radius * 2.0;
         sphereMarkers.scale.z = radius * 2.0;
-
-        sphereDeleter = sphereMarkers;
-        sphereDeleter.action = visualization_msgs::Marker::DELETE;
+        sphereMarkers.lifetime = ros::Duration(1.0);
 
         geometry_msgs::Point point;
         point.x = center(0);
@@ -297,7 +295,6 @@ public:
         point.z = center(2);
         sphereMarkers.points.push_back(point);
 
-        spherePub.publish(sphereDeleter);
         spherePub.publish(sphereMarkers);
     }
 

@@ -130,8 +130,12 @@ private:
         Takeoff,
         Land
     } control_state;
-    double change_state_time = -1;
     double cruiseVel;
+
+    int rc_state_a = -1;
+    int rc_state_b = -1;
+    double takeoffStartTime = -1;
+    double landingStartTime = -1;
 
 public:
     GlobalPlanner(const Config &conf,
@@ -548,7 +552,10 @@ public:
         case ControlState::Hover:
         {
             if ((holdPosition - state.pos).norm() > 0.5)
+            {
                 holdPosition = state.pos;
+                std::cout << "holdPosition = state.pos;" << std::endl;
+            }
             if (cos(cmdYaw - state.yaw) < 0.8)
                 holdYaw = state.yaw;
 
@@ -678,31 +685,49 @@ public:
         case ControlState::Takeoff:
         {
             double takeoff_height = holdPosition.z() + 1.2;
-            if (state.pos.z() > takeoff_height)
+            if (state.pos.z() > takeoff_height - 0.05)
             {
-                changeState(ControlState::Hover, true);
+                Eigen::Vector3d holdP = holdPosition;
+                holdP.z() = takeoff_height;
+                if ((ros::Time::now() - last_rc_time).toSec() > 1.0)
+                    changeState(ControlState::Hover, true);
+                else
+                    changeState(ControlState::Manual, true);
+                holdPosition = holdP;
                 return;
             }
             cmdPosition.x() = holdPosition.x();
             cmdPosition.y() = holdPosition.y();
-            cmdPosition.z() = state.pos.z() + std::max(0.1, std::min(1.5, takeoff_height - state.pos.z()));
+            if (takeoffStartTime < ros::Time::now().toSec())
+            {
+                cmdPosition.z() = state.pos.z() + std::max(0.1, std::min(1.5, takeoff_height - state.pos.z()));    
+            }
+            else
+            {
+                cmdPosition.z() = state.pos.z() - 0.01;
+            }
             cmdYaw = holdYaw;
             break;
         }
 
         case ControlState::Land:
         {
-            double land_t = ros::Time::now().toSec() - change_state_time;
-            if (change_state_time > 0 && land_t > 1.5 && abs(state.vel.z()) < 0.05)
+            double land_t = ros::Time::now().toSec() - landingStartTime;
+            double land_v = 0.3;
+
+            if (landingStartTime > 0 && land_t > 1.5 && abs(state.vel.z()) < 0.05)
             {
                 if (!state.setMode("AUTO.LAND"))
                     ROS_WARN("Land fail!");
                 changeState(ControlState::Idle, true);
                 return;
             }
+
+            if (state.dist_bottom < 0.6) land_v = land_v * std::max(0.4, state.dist_bottom / 0.6);
+
             cmdPosition.x() = holdPosition.x();
             cmdPosition.y() = holdPosition.y();
-            cmdPosition.z() = state.pos.z() - 0.3;
+            cmdPosition.z() = state.pos.z() - land_v;
             cmdYaw = holdYaw;
             break;
         }
@@ -918,6 +943,14 @@ public:
             visualizer.deletePlans();
             changeState(ControlState::Hover, true);
         }
+        else if (splited.front() == "a")
+        {
+            takeoffEvent();
+        }
+        else if (splited.front() == "b")
+        {
+            landingEvent();
+        }
         else if (splited.front() == "p")
         {
             // setAstarBound();
@@ -979,6 +1012,70 @@ public:
             }
 
             if (traj.getPieceNum() > 0) traj.clear();
+        }
+
+        int takeoff_trigger = msg.channels[6];
+        if (rc_state_a < 0)
+        {
+            rc_state_a = takeoff_trigger;
+        }
+        else
+        {
+            if (abs(rc_state_a - takeoff_trigger) > 100)
+            {
+                rc_state_a = takeoff_trigger;
+                takeoffEvent();
+            }
+        }
+
+        int land_trigger = msg.channels[7];
+        if (rc_state_b < 0)
+        {
+            rc_state_b = land_trigger;
+        }
+        else
+        {
+            if (abs(rc_state_b - land_trigger) > 100)
+            {
+                rc_state_b = land_trigger;
+                landingEvent();
+            }
+        }
+    }
+
+    void takeoffEvent()
+    {
+        if (control_state == ControlState::Takeoff)
+        {   // cancel takeoff
+            changeState(ControlState::Hover, true);
+        }
+        else if (state.dist_bottom < 0.6)
+        {   // takeoff start
+            takeoffStartTime = ros::Time::now().toSec();
+            if (state.mode != "OFFBOARD") state.setMode("OFFBOARD");
+            if (!state.armed)
+            {
+                state.commandArm(true);
+                takeoffStartTime += 3.0;
+            }
+
+            changeState(ControlState::Takeoff, true);
+        }
+    }
+
+    void landingEvent()
+    {
+        if (control_state == ControlState::Land)
+        {   // cancel landing
+            changeState(ControlState::Hover, true);
+        }
+        else
+        {   // landing start
+            if (state.armed)
+            {
+                landingStartTime = ros::Time::now().toSec();
+                changeState(ControlState::Land, true);
+            }
         }
     }
 
@@ -1133,7 +1230,6 @@ public:
             control_state = new_state;
             holdPosition = state.pos;
             holdYaw = state.yaw;
-            change_state_time = ros::Time::now().toSec();
             return true;
         }
     }

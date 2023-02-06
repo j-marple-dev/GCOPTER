@@ -192,10 +192,15 @@ class Controller:
         self.button_1.set_text("MODE")
         self.GUIs.append(self.button_1)
 
-        self.button_2 = Button(SCREEN_WIDTH // 2, 75, 120, 24)
-        self.button_2.set_color(COLOR_BLUE)
-        self.button_2.set_text("Delete Path")
-        self.GUIs.append(self.button_2)
+        self.button_2a = Button(SCREEN_WIDTH // 2 - 32, 75, 56, 24)
+        self.button_2a.set_color(COLOR_BLUE)
+        self.button_2a.set_text("A")
+        self.GUIs.append(self.button_2a)
+
+        self.button_2b = Button(SCREEN_WIDTH // 2 + 32, 75, 56, 24)
+        self.button_2b.set_color(COLOR_BLUE)
+        self.button_2b.set_text("B")
+        self.GUIs.append(self.button_2b)
 
         self.button_3 = Button(SCREEN_WIDTH // 2, 105, 120, 24)
         self.button_3.set_color(COLOR_BLUE)
@@ -269,9 +274,13 @@ class Controller:
                 else:
                     self.send_mode_change_cmd("OFFBOARD")
 
-            elif clicked_gui == self.button_2:
-                self.button_2.block_click = True
-                self.control_msg.send_delete_path_cmd()
+            elif clicked_gui == self.button_2a:
+                self.button_2a.block_click = True
+                self.control_msg.send_a_key_cmd()
+
+            elif clicked_gui == self.button_2b:
+                self.button_2b.block_click = True
+                self.control_msg.send_b_key_cmd()
 
             elif clicked_gui == self.button_3:
                 self.button_3.block_click = True

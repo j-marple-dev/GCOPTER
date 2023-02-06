@@ -93,12 +93,20 @@ class ControlMessage:
         msg.data = "{mode},{roll},{pitch},{yaw},{throttle}".format(mode=mode,roll=roll,pitch=pitch,yaw=yaw,throttle=throttle)
         self.control_pub.publish(msg)
 
-    def send_delete_path_cmd(self) -> None:
-        """Send delete path message
-        Header: d
+    def send_a_key_cmd(self) -> None:
+        """Send a key message
+        Header: a
         """
         msg = String()
-        msg.data = "d"
+        msg.data = "a"
+        self.control_pub.publish(msg)
+
+    def send_b_key_cmd(self) -> None:
+        """Send b key message
+        Header: b
+        """
+        msg = String()
+        msg.data = "b"
         self.control_pub.publish(msg)
 
     def send_control_assist(self, roll: float, pitch: float, yaw: float, throttle: float) -> None:
